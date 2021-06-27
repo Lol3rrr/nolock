@@ -3,4 +3,5 @@
 //! Datastructures
 
 pub mod hash_trie;
+pub mod hazard_ptr;
 pub mod queues;
