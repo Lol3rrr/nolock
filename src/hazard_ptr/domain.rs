@@ -8,18 +8,16 @@ use crate::queues::mpsc::jiffy;
 
 use super::{record::Record, retire_node::RetireNode, Guard};
 
-/// A Hazard-Pointer domain
+/// A Thread-Local instance to interact with a single Hazard-Pointer-Domain
 pub struct Domain {
-    reclaim_count: usize,
+    r_threshold: usize,
 
     global: &'static DomainGlobal,
 
     record_sender: jiffy::Sender<*mut Record<()>>,
     record_receiver: jiffy::Receiver<*mut Record<()>>,
 
-    // These two are "thread" specific
     r_list: Vec<RetireNode<()>>,
-    r_count: usize,
 }
 
 impl Drop for Domain {
@@ -33,16 +31,15 @@ impl Drop for Domain {
 
 impl Domain {
     /// Creates a new Domain with the given shared Global and reclaim Count
-    pub fn new(global: &'static DomainGlobal, reclaim_count: usize) -> Self {
+    pub fn new(global: &'static DomainGlobal, reclaim_threshold: usize) -> Self {
         let (rx, tx) = jiffy::queue();
 
         Self {
-            reclaim_count,
+            r_threshold: reclaim_threshold,
             global,
             record_sender: tx,
             record_receiver: rx,
             r_list: Vec::new(),
-            r_count: 0,
         }
     }
 
@@ -53,12 +50,11 @@ impl Domain {
     {
         self.r_list
             .push(RetireNode::new(node, Box::new(retire_func)));
-        self.r_count += 1;
 
         // If the number of Backed up retirement Nodes is larger than
         // the specified Boundary, actually retire all the current retirement
         // nodes
-        if self.r_count >= self.reclaim_count {
+        if self.r_list.len() >= self.r_threshold {
             self.scan();
         }
     }
@@ -69,12 +65,10 @@ impl Domain {
         let plist = self.global.get_protections();
 
         let tmplist = std::mem::replace(&mut self.r_list, Vec::new());
-        self.r_count = 0;
 
         for node in tmplist {
             if plist.contains(&(node.ptr as *mut ())) {
                 self.r_list.push(node);
-                self.r_count += 1;
             } else {
                 node.retire();
             }

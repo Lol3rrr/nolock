@@ -2,21 +2,24 @@ use std::{collections::HashSet, mem::ManuallyDrop, sync::atomic};
 
 use crate::hazard_ptr::Record;
 
-/// TODO
+/// This represents the Global shared state for a singel Hazard-Domain, which
+/// is mainly the List of all Hazards in the current Domain
 pub struct DomainGlobal {
     records: atomic::AtomicPtr<Record<()>>,
 }
 
 impl DomainGlobal {
-    /// TODO
+    /// Creates a new Empty DomainGlobal instance, which has no Hazard-Pointers
+    /// to start with
     pub const fn new() -> Self {
         let records = atomic::AtomicPtr::new(0 as *mut Record<()>);
 
         Self { records }
     }
 
-    /// Loads all the currently protected PTRs
-    pub fn get_protections(&self) -> HashSet<*mut ()> {
+    /// Checks all the current Hazard-Pointers and returns a Set of all
+    /// currently protected PTRs stored in them
+    pub(crate) fn get_protections(&self) -> HashSet<*mut ()> {
         let mut plist = HashSet::new();
 
         let ptr = self.records.load(atomic::Ordering::SeqCst);
@@ -42,8 +45,8 @@ impl DomainGlobal {
         plist
     }
 
-    /// TODO
-    pub fn append_record(&self, n_record_ptr: *mut Record<()>) {
+    /// This is used to add a new Record to the End of the Hazard-Pointer-List
+    pub(crate) fn append_record(&self, n_record_ptr: *mut Record<()>) {
         let ptr = self.records.load(atomic::Ordering::SeqCst);
         if ptr.is_null() {
             if let Ok(_) = self.records.compare_exchange(
