@@ -67,7 +67,7 @@ impl Domain {
         let tmplist = std::mem::replace(&mut self.r_list, Vec::new());
 
         for node in tmplist {
-            if plist.contains(&(node.ptr as *mut ())) {
+            if plist.contains(&(node.ptr as *const ())) {
                 self.r_list.push(node);
             } else {
                 node.retire();

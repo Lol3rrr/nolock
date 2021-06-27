@@ -19,7 +19,7 @@ impl DomainGlobal {
 
     /// Checks all the current Hazard-Pointers and returns a Set of all
     /// currently protected PTRs stored in them
-    pub(crate) fn get_protections(&self) -> HashSet<*mut ()> {
+    pub(crate) fn get_protections(&self) -> HashSet<*const ()> {
         let mut plist = HashSet::new();
 
         let ptr = self.records.load(atomic::Ordering::SeqCst);
@@ -31,7 +31,7 @@ impl DomainGlobal {
         loop {
             let ptr_val = current_item.ptr.load(atomic::Ordering::SeqCst);
             if !ptr_val.is_null() {
-                plist.insert(ptr_val);
+                plist.insert(ptr_val as *const ());
             }
 
             match current_item.load_next(atomic::Ordering::SeqCst) {
