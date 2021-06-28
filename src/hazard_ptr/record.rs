@@ -14,8 +14,8 @@ impl<T> Record<T> {
     /// of Records
     pub fn boxed_empty() -> Box<Self> {
         Box::new(Self {
-            ptr: atomic::AtomicPtr::new(0 as *mut T),
-            next: atomic::AtomicPtr::new(0 as *mut Record<T>),
+            ptr: atomic::AtomicPtr::new(std::ptr::null_mut()),
+            next: atomic::AtomicPtr::new(std::ptr::null_mut()),
         })
     }
 

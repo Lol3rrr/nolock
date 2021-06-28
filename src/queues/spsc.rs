@@ -1,5 +1,12 @@
 //! The SPSC-Queue is a Single-Producer Single-Consumer Queue
 
+/// The Error for the Dequeue Operation
+#[derive(Debug, PartialEq)]
+pub enum DequeueError {
+    /// This indicates that no Data could be dequeued
+    WouldBlock,
+}
+
 pub mod bounded {
     //! This implements a bounded lock-free Queue
     //!
@@ -7,6 +14,8 @@ pub mod bounded {
     //! * [FastForward for Efficient Pipeline Parallelism - A Cache-Optimized Concurrent Lock-Free Queue](https://www.researchgate.net/publication/213894711_FastForward_for_Efficient_Pipeline_Parallelism_A_Cache-Optimized_Concurrent_Lock-Free_Queue)
 
     use std::sync::{atomic, Arc};
+
+    use super::DequeueError;
 
     /// The Sending-Half for the queue
     pub struct BoundedSender<T> {
@@ -55,13 +64,6 @@ pub mod bounded {
         }
     }
 
-    /// The Error for the Dequeue Operation
-    #[derive(Debug, PartialEq)]
-    pub enum DequeueError {
-        /// This indicates that no Data could be dequeued
-        WouldBlock,
-    }
-
     impl<T> BoundedReceiver<T> {
         /// Attempts to Dequeue the given piece of Data
         pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
@@ -70,7 +72,7 @@ pub mod bounded {
                 return Err(DequeueError::WouldBlock);
             }
 
-            self.buffer[self.tail].store(0 as *mut T, atomic::Ordering::SeqCst);
+            self.buffer[self.tail].store(std::ptr::null_mut(), atomic::Ordering::SeqCst);
             self.tail = next_element(self.tail, self.buffer.len());
 
             let boxed_data = unsafe { Box::from_raw(data_ptr) };
@@ -90,7 +92,7 @@ pub mod bounded {
     pub fn bounded_queue<T>(size: usize) -> (BoundedReceiver<T>, BoundedSender<T>) {
         let mut raw_buffer = Vec::with_capacity(size);
         for _ in 0..size {
-            raw_buffer.push(atomic::AtomicPtr::new(0 as *mut T));
+            raw_buffer.push(atomic::AtomicPtr::new(std::ptr::null_mut()));
         }
 
         let buffer = Arc::new(raw_buffer);
@@ -137,10 +139,10 @@ pub mod unbounded {
     //! # Reference:
     //! * [An Efficient Unbounded Lock-Free Queue - for Multi-core Systems](https://link.springer.com/content/pdf/10.1007%2F978-3-642-32820-6_65.pdf)
 
-    pub mod dSPSC {
+    pub mod d_spsc {
         //! The Basic and slower version
 
-        use super::super::bounded;
+        use super::super::{bounded, DequeueError};
 
         use std::sync::atomic;
 
@@ -162,12 +164,12 @@ pub mod unbounded {
                 let node = match self.node_receiver.try_dequeue() {
                     Ok(mut n) => {
                         n.data = Some(data);
-                        n.next.store(0 as *mut Node<T>, atomic::Ordering::SeqCst);
+                        n.next.store(std::ptr::null_mut(), atomic::Ordering::SeqCst);
                         n
                     }
                     Err(_) => Box::new(Node {
                         data: Some(data),
-                        next: atomic::AtomicPtr::new(0 as *mut Node<T>),
+                        next: atomic::AtomicPtr::new(std::ptr::null_mut()),
                     }),
                 };
 
@@ -189,12 +191,12 @@ pub mod unbounded {
 
         impl<T> UnboundedReceiver<T> {
             /// Attempts to dequeue a piece of Data
-            pub fn try_dequeue(&mut self) -> Result<T, ()> {
+            pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
                 let prev_head = unsafe { Box::from_raw(self.head) };
                 let next_ptr = prev_head.next.load(atomic::Ordering::SeqCst);
                 if next_ptr.is_null() {
                     std::mem::forget(prev_head);
-                    return Err(());
+                    return Err(DequeueError::WouldBlock);
                 }
 
                 let mut next = unsafe { Box::from_raw(next_ptr) };
@@ -224,7 +226,7 @@ pub mod unbounded {
             let (node_rx, node_tx) = bounded::bounded_queue(64);
             let dummy_node = Box::new(Node {
                 data: None,
-                next: atomic::AtomicPtr::new(0 as *mut Node<T>),
+                next: atomic::AtomicPtr::new(std::ptr::null_mut()),
             });
             let dummy_ptr = Box::into_raw(dummy_node);
 
@@ -255,10 +257,10 @@ pub mod unbounded {
             fn dequeue_empty() {
                 let (mut rx, mut tx) = unbounded_basic_queue();
 
-                assert_eq!(Err(()), rx.try_dequeue());
+                assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
                 tx.enqueue(13);
                 assert_eq!(Ok(13), rx.try_dequeue());
-                assert_eq!(Err(()), rx.try_dequeue());
+                assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
             }
             #[test]
             fn multiple_enqueue_dequeue() {
@@ -285,7 +287,7 @@ pub mod unbounded {
         }
     }
 
-    use super::bounded;
+    use super::{bounded, DequeueError};
 
     // TODO
     // Add Support for the Caches to improve the Performance and reduce the overhead
@@ -295,7 +297,7 @@ pub mod unbounded {
     pub struct UnboundedSender<T> {
         buffer_size: usize,
         buf_w: bounded::BoundedSender<T>,
-        inuse_sender: dSPSC::UnboundedSender<bounded::BoundedReceiver<T>>,
+        inuse_sender: d_spsc::UnboundedSender<bounded::BoundedReceiver<T>>,
     }
 
     impl<T> UnboundedSender<T> {
@@ -310,7 +312,7 @@ pub mod unbounded {
             if self.buf_w.is_full() {
                 self.buf_w = self.next_w();
             }
-            if let Err(_) = self.buf_w.try_enqueue(data) {
+            if self.buf_w.try_enqueue(data).is_err() {
                 panic!("The new Buffer should always have capacity for a new Element");
             }
         }
@@ -319,7 +321,7 @@ pub mod unbounded {
     /// The Receiver-Half of an unbounded Queue
     pub struct UnboundedReceiver<T> {
         buf_r: bounded::BoundedReceiver<T>,
-        inuse_recv: dSPSC::UnboundedReceiver<bounded::BoundedReceiver<T>>,
+        inuse_recv: d_spsc::UnboundedReceiver<bounded::BoundedReceiver<T>>,
     }
 
     impl<T> UnboundedReceiver<T> {
@@ -331,26 +333,26 @@ pub mod unbounded {
         }
 
         /// Attempts to dequeue a single Element from the Queue
-        pub fn dequeue(&mut self) -> Result<T, ()> {
+        pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
             if self.buf_r.is_empty() {
                 if self.inuse_recv.is_empty() {
-                    return Err(());
+                    return Err(DequeueError::WouldBlock);
                 }
                 if self.buf_r.is_empty() {
                     self.buf_r = match self.next_r() {
                         Some(b) => b,
-                        None => return Err(()),
+                        None => return Err(DequeueError::WouldBlock),
                     };
                 }
             }
 
-            self.buf_r.try_dequeue().map_err(|_| ())
+            self.buf_r.try_dequeue()
         }
     }
 
     /// Creates a new Queue
     pub fn unbounded_queue<T>(buffer_size: usize) -> (UnboundedReceiver<T>, UnboundedSender<T>) {
-        let (inuse_rx, inuse_tx) = dSPSC::unbounded_basic_queue();
+        let (inuse_rx, inuse_tx) = d_spsc::unbounded_basic_queue();
         let (initial_rx, initial_tx) = bounded::bounded_queue(buffer_size);
 
         (
@@ -375,7 +377,7 @@ pub mod unbounded {
             let (mut rx, mut tx) = unbounded_queue(10);
 
             tx.enqueue(13);
-            assert_eq!(Ok(13), rx.dequeue());
+            assert_eq!(Ok(13), rx.try_dequeue());
         }
 
         #[test]
@@ -386,9 +388,9 @@ pub mod unbounded {
             tx.enqueue(14);
             tx.enqueue(15);
 
-            assert_eq!(Ok(13), rx.dequeue());
-            assert_eq!(Ok(14), rx.dequeue());
-            assert_eq!(Ok(15), rx.dequeue());
+            assert_eq!(Ok(13), rx.try_dequeue());
+            assert_eq!(Ok(14), rx.try_dequeue());
+            assert_eq!(Ok(15), rx.try_dequeue());
         }
     }
 }

@@ -48,15 +48,18 @@ impl DomainGlobal {
     /// This is used to add a new Record to the End of the Hazard-Pointer-List
     pub(crate) fn append_record(&self, n_record_ptr: *mut Record<()>) {
         let ptr = self.records.load(atomic::Ordering::SeqCst);
-        if ptr.is_null() {
-            if let Ok(_) = self.records.compare_exchange(
-                0 as *mut Record<()>,
-                n_record_ptr,
-                atomic::Ordering::SeqCst,
-                atomic::Ordering::SeqCst,
-            ) {
-                return;
-            }
+        if ptr.is_null()
+            && self
+                .records
+                .compare_exchange(
+                    std::ptr::null_mut(),
+                    n_record_ptr,
+                    atomic::Ordering::SeqCst,
+                    atomic::Ordering::SeqCst,
+                )
+                .is_ok()
+        {
+            return;
         }
 
         let mut last_record = {
@@ -70,7 +73,7 @@ impl DomainGlobal {
                 }
                 None => {
                     match last_record.next.compare_exchange(
-                        0 as *mut Record<()>,
+                        std::ptr::null_mut(),
                         n_record_ptr,
                         atomic::Ordering::SeqCst,
                         atomic::Ordering::SeqCst,

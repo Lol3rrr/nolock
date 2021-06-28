@@ -24,8 +24,6 @@ pub struct Sender<T> {
 /// The Single Receiver
 pub struct Receiver<T> {
     head_of_queue: *const BufferList<T>,
-    tail: Arc<atomic::AtomicUsize>,
-    tail_of_queue: Arc<atomic::AtomicPtr<BufferList<T>>>,
 }
 
 impl<T> Sender<T> {
@@ -48,21 +46,12 @@ impl<T> Sender<T> {
             end = tmp_buffer.position_in_queue * BUFFER_SIZE;
         }
 
-        // These are not needed anymore because the currently loaded Values are also the most
-        // recent ones anyway
-        //
-        //tmp_buffer_ptr = self.tail_of_queue.load(atomic::Ordering::Acquire);
-        //tmp_buffer = ManuallyDrop::new(unsafe { Box::from_raw(tmp_buffer_ptr) });
-
-        let mut is_last_buffer = true;
-
         let mut start = (tmp_buffer.position_in_queue - 1) * BUFFER_SIZE;
         while location < start {
             tmp_buffer_ptr = tmp_buffer.previous as *mut BufferList<T>;
             tmp_buffer = ManuallyDrop::new(unsafe { Box::from_raw(tmp_buffer_ptr) });
 
             start = (tmp_buffer.position_in_queue - 1) * BUFFER_SIZE;
-            is_last_buffer = false;
         }
 
         let index = location - start;
@@ -143,18 +132,6 @@ impl<T> Receiver<T> {
             };
         }
 
-        // This is actually not needed, because we check if we are at the end at the
-        // previous step when loading `n`
-        //
-        //let tail_val = self.tail.load(atomic::Ordering::SeqCst);
-        //if current_queue.head == tail_val % BUFFER_SIZE
-        //    && self.head_of_queue
-        //        == self.tail_of_queue.load(atomic::Ordering::SeqCst) as *const BufferList<T>
-        //    && current_queue.head == BUFFER_SIZE
-        //{
-        //return None;
-        //}
-
         match n.get_state() {
             NodeState::Set => {
                 let data = n.load();
@@ -183,7 +160,7 @@ impl<T> Receiver<T> {
                 let data = tmp_n.load();
                 tmp_n.handled();
 
-                return Some(data);
+                Some(data)
 
                 /*
                 let mut head_of_queue = self.load_head_of_queue();
@@ -217,7 +194,7 @@ unsafe impl<T> Send for Receiver<T> {}
 
 /// Creates a new empty Queue
 pub fn queue<T>() -> (Receiver<T>, Sender<T>) {
-    let initial_buffer = BufferList::boxed(0 as *const BufferList<T>, 1);
+    let initial_buffer = BufferList::boxed(std::ptr::null(), 1);
     let initial_ptr = Box::into_raw(initial_buffer);
 
     let tail = Arc::new(atomic::AtomicUsize::new(0));
@@ -226,8 +203,6 @@ pub fn queue<T>() -> (Receiver<T>, Sender<T>) {
     (
         Receiver {
             head_of_queue: initial_ptr as *const BufferList<T>,
-            tail: tail.clone(),
-            tail_of_queue: tail_of_queue.clone(),
         },
         Sender {
             tail,

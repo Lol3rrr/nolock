@@ -34,7 +34,7 @@ impl<T> BufferList<T> {
 
         Box::new(Self {
             previous,
-            next: atomic::AtomicPtr::new(0 as *mut BufferList<T>),
+            next: atomic::AtomicPtr::new(std::ptr::null_mut()),
             buffer,
             head: 0,
             position_in_queue,
@@ -140,17 +140,22 @@ impl<T> BufferList<T> {
         (tmp_head_of_queue, Some(tmp_head))
     }
 
+    // TODO
+    // This part was originally planed to also be included in this implementation of the Queue,
+    // but in the End was not done, as it caused some problems and it does not seem to be
+    // needed in most cases
+    #[allow(dead_code)]
     pub fn rescan(
         head_of_queue_ptr: *mut BufferList<T>,
-        mut tempHeadOfQueue: ManuallyDrop<Box<BufferList<T>>>,
-        mut tempHead: usize,
+        mut temp_head_of_queue: ManuallyDrop<Box<BufferList<T>>>,
+        mut temp_head: usize,
     ) -> (ManuallyDrop<Box<BufferList<T>>>, usize) {
         let mut scan_head_of_queue = ManuallyDrop::new(unsafe { Box::from_raw(head_of_queue_ptr) });
 
         let mut scan_head = scan_head_of_queue.head;
         loop {
-            if scan_head_of_queue.position_in_queue == tempHeadOfQueue.position_in_queue
-                && scan_head >= tempHead - 1
+            if scan_head_of_queue.position_in_queue == temp_head_of_queue.position_in_queue
+                && scan_head >= temp_head - 1
             {
                 break;
             }
@@ -164,8 +169,8 @@ impl<T> BufferList<T> {
             let scan_n = scan_head_of_queue.buffer.get(scan_head).unwrap();
 
             if NodeState::Set == scan_n.get_state() {
-                tempHead = scan_head;
-                tempHeadOfQueue = scan_head_of_queue;
+                temp_head = scan_head;
+                temp_head_of_queue = scan_head_of_queue;
                 scan_head_of_queue = ManuallyDrop::new(unsafe { Box::from_raw(head_of_queue_ptr) });
                 scan_head = scan_head_of_queue.head;
             }
@@ -173,7 +178,7 @@ impl<T> BufferList<T> {
             scan_head += 1;
         }
 
-        (tempHeadOfQueue, tempHead)
+        (temp_head_of_queue, temp_head)
     }
 
     /// This attempts to allocate a new BufferList and store it as the next-Ptr for
@@ -188,21 +193,21 @@ impl<T> BufferList<T> {
         let next_buffer_ptr = Box::into_raw(next_buffer);
 
         match self.next.compare_exchange(
-            0 as *mut BufferList<T>,
+            std::ptr::null_mut(),
             next_buffer_ptr,
             atomic::Ordering::SeqCst,
             atomic::Ordering::SeqCst,
         ) {
             Ok(_) => {
-                match tail_of_queue.compare_exchange(
-                    self_ptr,
-                    next_buffer_ptr,
-                    atomic::Ordering::SeqCst,
-                    atomic::Ordering::SeqCst,
-                ) {
-                    Ok(_) => {}
-                    Err(_) => {}
-                };
+                if tail_of_queue
+                    .compare_exchange(
+                        self_ptr,
+                        next_buffer_ptr,
+                        atomic::Ordering::SeqCst,
+                        atomic::Ordering::SeqCst,
+                    )
+                    .is_ok()
+                {}
             }
             Err(_) => {
                 drop(unsafe { Box::from_raw(next_buffer_ptr) });

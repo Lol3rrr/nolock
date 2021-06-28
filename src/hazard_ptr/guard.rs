@@ -22,7 +22,9 @@ pub struct Guard<T> {
 impl<T> Drop for Guard<T> {
     fn drop(&mut self) {
         let record = ManuallyDrop::new(unsafe { Box::from_raw(self.record) });
-        record.ptr.store(0 as *mut (), atomic::Ordering::SeqCst);
+        record
+            .ptr
+            .store(std::ptr::null_mut(), atomic::Ordering::SeqCst);
 
         self.record_returner.enqueue(self.record);
     }

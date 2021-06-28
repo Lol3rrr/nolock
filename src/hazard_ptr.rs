@@ -8,8 +8,6 @@
 // Add better reuse of Hazard-Pointers, mainly that if a Domain instance is
 // dropped, it should mark all of its entries to be reused by other Domains
 
-use std::{cell::RefCell, sync::atomic};
-
 mod record;
 use record::Record;
 
@@ -26,16 +24,41 @@ pub use guard::Guard;
 /// This domain will then be available as a private module, with the provided
 /// Domain-Name.
 ///
+/// # Domains:
 /// A Hazard-Domain helps to seperate different parts of your system that
 /// do not share memory and therefore are not relevant, safety wise, for
 /// other parts in the System and seperating the Hazard-Pointers by Domain
 /// can then help with Performance, as they only need to check the
 /// Hazard-Pointers relevant to their Domain.
+///
+/// # Example:
+/// Creates a new Domain called `demo_domain` and then uses it to protect
+/// an AtomicPtr and give save access to it;
+///
+/// ```ignore
+/// // Creates a module named `demo_domain` and all the Hazard-Pointer parts
+/// // are exposed in that module
+/// create_hazard_domain!(demo_domain);
+///
+/// # use std::sync::atomic;
+/// # let boxed_ptr: *mut u8 = Box::into_raw(Box::new(13));
+/// # let atomic_ptr = atomic::AtomicPtr::new(boxed_ptr);
+///
+/// // Actually use the new Hazard-Pointer-Domain
+/// let guard = demo_domain::protect(
+///     &atomic_ptr,
+///     atomic::Ordering::SeqCst,
+///     atomic::Ordering::SeqCst
+/// );
+/// println!("Value in the Guard: {}", *guard);
+/// ```
 #[macro_export]
 macro_rules! create_hazard_domain {
     ($domain_name:ident) => {
         mod $domain_name {
-            use super::*;
+            use crate::hazard_ptr::{Domain, DomainGlobal, Guard};
+            use std::{cell::RefCell, sync::atomic};
+
             static SUB_GLOBAL: DomainGlobal = DomainGlobal::new();
 
             thread_local! {
@@ -85,6 +108,14 @@ macro_rules! create_hazard_domain {
                         .retire_node(ptr as *mut (), move |raw_ptr| retire_fn(raw_ptr as *mut T));
                 })
             }
+
+            /// TODO
+            pub fn reclaim() {
+                SUB_DOMAIN.with(|shared_domain| {
+                    let mut mut_shared = shared_domain.borrow_mut();
+                    mut_shared.reclaim();
+                });
+            }
         }
     };
 }
@@ -95,6 +126,8 @@ pub use default::*;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::sync::atomic;
 
     #[test]
     fn protect_memory() {

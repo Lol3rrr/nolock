@@ -10,13 +10,18 @@ use super::{record::Record, retire_node::RetireNode, Guard};
 
 /// A Thread-Local instance to interact with a single Hazard-Pointer-Domain
 pub struct Domain {
-    r_threshold: usize,
-
+    /// The Refernce to the Shared-Global State for the Hazard-Pointer-Domain
     global: &'static DomainGlobal,
 
     record_sender: jiffy::Sender<*mut Record<()>>,
     record_receiver: jiffy::Receiver<*mut Record<()>>,
 
+    /// The Threshold at which it should try to reclaim all Memory marked
+    /// as retired
+    r_threshold: usize,
+    /// The List of Memory-Nodes marked as being ready to retire, by the
+    /// algorithm, that have not yet been reclaimed and may still be in use
+    /// by some other Part of the overall system
     r_list: Vec<RetireNode<()>>,
 }
 
@@ -30,7 +35,7 @@ impl Drop for Domain {
 }
 
 impl Domain {
-    /// Creates a new Domain with the given shared Global and reclaim Count
+    /// Creates a new Domain with the given shared Global and reclaim Threshold
     pub fn new(global: &'static DomainGlobal, reclaim_threshold: usize) -> Self {
         let (rx, tx) = jiffy::queue();
 
@@ -43,13 +48,19 @@ impl Domain {
         }
     }
 
-    /// Attempts to retire the Data pointed to by the given Ptr
+    /// Marks the given Memory-Node as being removed from whatever system it
+    /// was part of and that it should be reclaimed at some point, however at
+    /// the Moment it might still be used by other Parts. Once the Memory-Node
+    /// is no longer used by anyone else, it will reclaim it by calling the
+    /// given `retire_func`
     pub fn retire_node<F>(&mut self, node: *mut (), retire_func: F)
     where
         F: Fn(*mut ()) + 'static,
     {
-        self.r_list
-            .push(RetireNode::new(node, Box::new(retire_func)));
+        // Creates a new RetireNode for the given Entry and appends it to
+        // the List of Nodes to retire
+        let r_node = RetireNode::new(node, Box::new(retire_func));
+        self.r_list.push(r_node);
 
         // If the number of Backed up retirement Nodes is larger than
         // the specified Boundary, actually retire all the current retirement
@@ -59,12 +70,17 @@ impl Domain {
         }
     }
 
-    /// This actually performs the reclaimation for the elements stored in
-    /// the R-List
+    /// TODO
+    pub fn reclaim(&mut self) {
+        self.scan();
+    }
+
+    /// Actually attempts to reclaim the Memory from the RetireNodes stored
+    /// in the Retired-List
     fn scan(&mut self) {
         let plist = self.global.get_protections();
 
-        let tmplist = std::mem::replace(&mut self.r_list, Vec::new());
+        let tmplist = std::mem::take(&mut self.r_list);
 
         for node in tmplist {
             if plist.contains(&(node.ptr as *const ())) {
@@ -75,7 +91,9 @@ impl Domain {
         }
     }
 
-    /// Allocates a new Record and appends it to the Global-HP-Records list
+    /// Allocates a new Hazard-Pointer-Record and appends it to the
+    /// global shared HP-Records list to make sure that every thread can
+    /// see the new Hazard-Pointer as well
     fn generate_new_record(&mut self) -> *mut Record<()> {
         let n_record = Record::boxed_empty();
         let n_record_ptr = Box::into_raw(n_record);
