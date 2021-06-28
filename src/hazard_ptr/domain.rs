@@ -70,7 +70,9 @@ impl Domain {
         }
     }
 
-    /// TODO
+    /// Forces a reclaimation attempt, which might reclaim some of the retired
+    /// Nodes, but does not garantue that any Node will be reclaimed, as
+    /// they might still be used
     pub fn reclaim(&mut self) {
         self.scan();
     }

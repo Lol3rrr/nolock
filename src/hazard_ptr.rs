@@ -109,7 +109,19 @@ macro_rules! create_hazard_domain {
                 })
             }
 
-            /// TODO
+            /// Forces a reclaimation attempt to be performed. However this
+            /// does not garantue that any nodes are actually reclaimed as
+            /// there might be no unused Node.
+            ///
+            /// # Usage
+            /// This function does not need to be called, as the reclaimation
+            /// will be performed automatically once a certain number of items
+            /// are waiting to be reclaimed.
+            /// However this function might help to improve the Performance of
+            /// your Program, as you can call this at a time where you can
+            /// spare the Cost of reclaimation without hindering the rest of
+            /// the System and therfore help to prevent the reclaimation to
+            /// happen in the critical Hot-Path of your Program
             pub fn reclaim() {
                 SUB_DOMAIN.with(|shared_domain| {
                     let mut mut_shared = shared_domain.borrow_mut();
