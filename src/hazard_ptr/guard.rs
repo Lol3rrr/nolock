@@ -60,16 +60,13 @@ impl<T> Guard<T> {
     /// This is especially useful when iterating a Datastruture, as you often
     /// only have one Node you are currently processing and then move on
     /// to another one.
-    pub fn protect(
-        &mut self,
-        atom_ptr: &atomic::AtomicPtr<T>,
-        load_order: atomic::Ordering,
-        store_order: atomic::Ordering,
-    ) {
+    pub fn protect(&mut self, atom_ptr: &atomic::AtomicPtr<T>, load_order: atomic::Ordering) {
         let record = ManuallyDrop::new(unsafe { Box::from_raw(self.record) });
         let mut protect_ptr = atom_ptr.load(load_order);
         loop {
-            record.ptr.store(protect_ptr as *mut (), store_order);
+            record
+                .ptr
+                .store(protect_ptr as *mut (), atomic::Ordering::SeqCst);
 
             let n_ptr = atom_ptr.load(load_order);
             if n_ptr == protect_ptr {
@@ -80,5 +77,10 @@ impl<T> Guard<T> {
         }
 
         self.inner = protect_ptr;
+    }
+
+    /// Converts the Guard into a Guard for a differnt underlying Type
+    pub unsafe fn convert<O>(self) -> Guard<O> {
+        std::mem::transmute(self)
     }
 }

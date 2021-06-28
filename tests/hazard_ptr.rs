@@ -25,11 +25,7 @@ fn protect_boxed() {
 
     let list_head = atomic::AtomicPtr::new(initial_ptr);
 
-    let initial_guard = hazard_ptr::protect(
-        &list_head,
-        atomic::Ordering::SeqCst,
-        atomic::Ordering::SeqCst,
-    );
+    let initial_guard = hazard_ptr::protect(&list_head, atomic::Ordering::SeqCst);
 
     let new_ptr = Box::into_raw(Box::new(Element {
         value: 1,
@@ -52,11 +48,7 @@ fn protect_boxed() {
 
     assert_eq!(0, initial_guard.value);
 
-    let new_guard = hazard_ptr::protect(
-        &list_head,
-        atomic::Ordering::SeqCst,
-        atomic::Ordering::SeqCst,
-    );
+    let new_guard = hazard_ptr::protect(&list_head, atomic::Ordering::SeqCst);
 
     assert_eq!(1, new_guard.value);
 

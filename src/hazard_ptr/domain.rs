@@ -111,7 +111,6 @@ impl Domain {
         &mut self,
         atom_ptr: &atomic::AtomicPtr<T>,
         load_order: atomic::Ordering,
-        store_order: atomic::Ordering,
     ) -> Guard<T> {
         let record_ptr = match self.record_receiver.dequeue() {
             Some(r) => r,
@@ -124,7 +123,7 @@ impl Domain {
             record_returner: self.record_sender.clone(),
         };
 
-        guard.protect(atom_ptr, load_order, store_order);
+        guard.protect(atom_ptr, load_order);
 
         guard
     }

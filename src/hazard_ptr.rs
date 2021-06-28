@@ -81,11 +81,10 @@ macro_rules! create_hazard_domain {
             pub fn protect<T>(
                 atom_ptr: &atomic::AtomicPtr<T>,
                 load_order: atomic::Ordering,
-                store_order: atomic::Ordering,
             ) -> Guard<T> {
                 SUB_DOMAIN.with(|shared_domain| {
                     let mut mut_shared = shared_domain.borrow_mut();
-                    mut_shared.protect(atom_ptr, load_order, store_order)
+                    mut_shared.protect(atom_ptr, load_order)
                 })
             }
 
@@ -146,11 +145,7 @@ mod tests {
         let raw_ptr = Box::into_raw(Box::new(15));
         let shared_ptr = atomic::AtomicPtr::new(raw_ptr);
 
-        let guard = protect(
-            &shared_ptr,
-            atomic::Ordering::SeqCst,
-            atomic::Ordering::SeqCst,
-        );
+        let guard = protect(&shared_ptr, atomic::Ordering::SeqCst);
 
         assert_eq!(15, *guard);
 
