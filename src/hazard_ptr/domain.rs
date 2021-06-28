@@ -1,5 +1,4 @@
 mod global;
-use std::mem::ManuallyDrop;
 
 pub use global::DomainGlobal;
 use std::sync::atomic;
@@ -119,23 +118,14 @@ impl Domain {
             None => self.generate_new_record(),
         };
 
-        let record = ManuallyDrop::new(unsafe { Box::from_raw(record_ptr) });
-        let mut protect_ptr = atom_ptr.load(load_order);
-        loop {
-            record.ptr.store(protect_ptr as *mut (), store_order);
-
-            let n_ptr = atom_ptr.load(load_order);
-            if n_ptr == protect_ptr {
-                break;
-            }
-
-            protect_ptr = n_ptr;
-        }
-
-        Guard {
-            inner: protect_ptr,
+        let mut guard: Guard<T> = Guard {
+            inner: std::ptr::null_mut(),
             record: record_ptr,
             record_returner: self.record_sender.clone(),
-        }
+        };
+
+        guard.protect(atom_ptr, load_order, store_order);
+
+        guard
     }
 }

@@ -1,14 +1,14 @@
 use super::{Entry, HashLevel};
 use std::{mem::ManuallyDrop, sync::atomic};
 
-pub(crate) enum PtrTarget<K, V> {
-    HashLevel(*mut HashLevel<K, V>),
+pub(crate) enum PtrTarget<K, V, const B: u8> {
+    HashLevel(*mut HashLevel<K, V, B>),
     Entry(*mut Entry<K, V>),
 }
 
-pub(crate) fn boxed_hashlevel<K, V>(
-    ptr: *mut HashLevel<K, V>,
-) -> ManuallyDrop<Box<HashLevel<K, V>>> {
+pub(crate) fn boxed_hashlevel<K, V, const B: u8>(
+    ptr: *mut HashLevel<K, V, B>,
+) -> ManuallyDrop<Box<HashLevel<K, V, B>>> {
     let boxed = unsafe { Box::from_raw(ptr) };
     ManuallyDrop::new(boxed)
 }
@@ -28,16 +28,20 @@ impl Atomic {
         }
     }
 
-    pub fn load<K, V>(&self, order: atomic::Ordering) -> PtrTarget<K, V> {
+    pub fn load<K, V, const B: u8>(&self, order: atomic::Ordering) -> PtrTarget<K, V, B> {
         let raw = self.ptr.load(order);
 
         if is_entry(raw as *const u8) {
             PtrTarget::Entry(to_actual_ptr(raw as *const u8) as *mut Entry<K, V>)
         } else {
-            PtrTarget::HashLevel(to_actual_ptr(raw as *const u8) as *mut HashLevel<K, V>)
+            PtrTarget::HashLevel(to_actual_ptr(raw as *const u8) as *mut HashLevel<K, V, B>)
         }
     }
-    pub fn store_hashlevel<K, V>(&self, ptr: *mut HashLevel<K, V>, order: atomic::Ordering) {
+    pub fn store_hashlevel<K, V, const B: u8>(
+        &self,
+        ptr: *mut HashLevel<K, V, B>,
+        order: atomic::Ordering,
+    ) {
         let marked = mark_as_previous(ptr as *const u8) as *mut u8;
         self.ptr.store(marked, order);
     }
@@ -46,10 +50,10 @@ impl Atomic {
         self.ptr.store(marked, order);
     }
 
-    pub fn cas_hashlevel<K, V>(
+    pub fn cas_hashlevel<K, V, const B: u8>(
         &self,
         current: *mut u8,
-        new: *mut HashLevel<K, V>,
+        new: *mut HashLevel<K, V, B>,
         success: atomic::Ordering,
         failure: atomic::Ordering,
     ) -> Result<*mut u8, *mut u8> {

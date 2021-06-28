@@ -30,6 +30,14 @@ impl<T> Record<T> {
 
         Some(ManuallyDrop::new(unsafe { Box::from_raw(ptr) }))
     }
+
+    /// This resets the Hazard-Record to its empty initial State, where it
+    /// does not actually protect any Memory and is ready to be acquired and
+    /// used
+    pub fn reset(&self) {
+        self.ptr
+            .store(std::ptr::null_mut(), atomic::Ordering::SeqCst);
+    }
 }
 
 impl<T> Debug for Record<T> {

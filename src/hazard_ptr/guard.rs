@@ -22,9 +22,7 @@ pub struct Guard<T> {
 impl<T> Drop for Guard<T> {
     fn drop(&mut self) {
         let record = ManuallyDrop::new(unsafe { Box::from_raw(self.record) });
-        record
-            .ptr
-            .store(std::ptr::null_mut(), atomic::Ordering::SeqCst);
+        record.reset();
 
         self.record_returner.enqueue(self.record);
     }
@@ -48,5 +46,39 @@ impl<T> Guard<T> {
     /// Gets the underlying PTR to the Data protected by the Guard
     pub fn raw(&self) -> *const T {
         self.inner as *const T
+    }
+
+    /// Loads the most recent Ptr-Value from the given AtomicPtr and updates
+    /// the current Guard to now protect this new Ptr.
+    ///
+    /// # Usage
+    /// This should be used when you already have Guard, but no longer need the
+    /// original Guard/Value and now need to protect another new Memory-
+    /// Location, as this method reuses an already owned Hazard-Pointer/Guard
+    /// and therefore does not need to acquire a Hazard-Pointer beforehand.
+    ///
+    /// This is especially useful when iterating a Datastruture, as you often
+    /// only have one Node you are currently processing and then move on
+    /// to another one.
+    pub fn protect(
+        &mut self,
+        atom_ptr: &atomic::AtomicPtr<T>,
+        load_order: atomic::Ordering,
+        store_order: atomic::Ordering,
+    ) {
+        let record = ManuallyDrop::new(unsafe { Box::from_raw(self.record) });
+        let mut protect_ptr = atom_ptr.load(load_order);
+        loop {
+            record.ptr.store(protect_ptr as *mut (), store_order);
+
+            let n_ptr = atom_ptr.load(load_order);
+            if n_ptr == protect_ptr {
+                break;
+            }
+
+            protect_ptr = n_ptr;
+        }
+
+        self.inner = protect_ptr;
     }
 }
