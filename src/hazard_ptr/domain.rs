@@ -104,6 +104,22 @@ impl Domain {
         n_record_ptr
     }
 
+    /// This function obains an empty Guard, that currently does not protect
+    /// anything and should not be used to try and access the Data inside it,
+    /// which would cause a Null-Ptr dereference
+    pub fn empty_guard<T>(&mut self) -> Guard<T> {
+        let record_ptr = match self.record_receiver.dequeue() {
+            Some(r) => r,
+            None => self.generate_new_record(),
+        };
+
+        Guard {
+            inner: std::ptr::null_mut(),
+            record: record_ptr,
+            record_returner: self.record_sender.clone(),
+        }
+    }
+
     /// Loads the most recent Ptr-Value from the given AtomicPtr, protects it
     /// using a Hazard-Ptr and returns a Guard, through which you can access
     /// the underlying protected Data

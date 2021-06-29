@@ -83,4 +83,9 @@ impl<T> Guard<T> {
     pub unsafe fn convert<O>(self) -> Guard<O> {
         std::mem::transmute(self)
     }
+
+    /// TODO
+    pub unsafe fn set_inner(&mut self, n_ptr: *mut T) {
+        self.inner = n_ptr;
+    }
 }

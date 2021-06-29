@@ -88,6 +88,14 @@ macro_rules! create_hazard_domain {
                 })
             }
 
+            /// TODO
+            pub fn empty_guard<T>() -> Guard<T> {
+                SUB_DOMAIN.with(|shared_domain| {
+                    let mut mut_shared = shared_domain.borrow_mut();
+                    mut_shared.empty_guard()
+                })
+            }
+
             /// This function is used to reclaim a piece of memory, once it is
             /// no longer in use by any other Thread. Once it is determined
             /// that the given Address is no longer used by any other Thread,
