@@ -15,6 +15,10 @@ impl<K, V> TargetPtr<K, V> {
         Self(atomic::AtomicPtr::new(marked))
     }
 
+    pub fn raw_load(&self, order: atomic::Ordering) -> *mut () {
+        self.0.load(order) as *mut ()
+    }
+
     pub fn load<const B: u8>(
         &self,
         tmp_guard: &mut hazard_ptr::Guard<Entry<K, V>>,
@@ -30,6 +34,10 @@ impl<K, V> TargetPtr<K, V> {
             let ptr = ptr as *mut HashLevel<K, V, B>;
             Some((ManuallyDrop::new(unsafe { Box::from_raw(ptr) }), ptr))
         }
+    }
+
+    pub fn raw_store(&self, new: *mut (), order: atomic::Ordering) {
+        self.0.store(new as *mut Entry<K, V>, order)
     }
 
     pub fn store_hashlevel(&self, ptr: *mut (), order: atomic::Ordering) {
@@ -56,6 +64,21 @@ impl<K, V> TargetPtr<K, V> {
     ) -> Result<*mut Entry<K, V>, *mut Entry<K, V>> {
         let marked = mark_as_entry(new as *const u8) as *mut Entry<K, V>;
         self.0.compare_exchange(current, marked, success, failure)
+    }
+
+    pub fn raw_cas(
+        &self,
+        current: *mut (),
+        new: *mut (),
+        success: atomic::Ordering,
+        failure: atomic::Ordering,
+    ) -> Result<*mut Entry<K, V>, *mut Entry<K, V>> {
+        self.0.compare_exchange(
+            current as *mut Entry<K, V>,
+            new as *mut Entry<K, V>,
+            success,
+            failure,
+        )
     }
 }
 

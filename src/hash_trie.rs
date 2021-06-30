@@ -2,18 +2,20 @@
 //!
 //! # Reference:
 //! * [A Lock-Free Hash Trie Design for Concurrent Tabled Logic Programs](https://link.springer.com/content/pdf/10.1007/s10766-014-0346-1.pdf)
+//! * [Towards a Lock-Free, Fixed Size and Persistent Hash Map Design](https://repositorio.inesctec.pt/bitstream/123456789/6155/1/P-00N-B3Y.pdf)
 
 use std::{
     collections::hash_map::RandomState,
     fmt::Debug,
     hash::{BuildHasher, Hash, Hasher},
     marker::PhantomData,
-    ops::Deref,
 };
 
+mod entry;
 mod hashlevel;
 mod mptr;
-use hashlevel::{Entry, HashLevel};
+use entry::Entry;
+use hashlevel::HashLevel;
 
 use crate::hazard_ptr;
 
@@ -112,26 +114,82 @@ where
     }
 
     /// Clones out a value from the Hash-Trie-Map
-    pub fn get(&self, key: K) -> Option<RefValue<K, V>> {
+    pub fn get(&self, key: &K) -> Option<RefValue<K, V>> {
         let mut hasher = self.build_hasher.build_hasher();
         key.hash(&mut hasher);
         let hash = hasher.finish();
 
-        self.initial_level.get(hash, &key)
+        self.initial_level.get(hash, key)
+    }
+
+    /// TODO
+    pub fn remove(&self, key: &K) {
+        let mut hasher = self.build_hasher.build_hasher();
+        key.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        self.initial_level.remove_entry(hash, key);
     }
 }
+
+unsafe impl<K, V, H> Sync for HashTrieMap<K, V, H> {}
+unsafe impl<K, V, H> Send for HashTrieMap<K, V, H> {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    fn get_non_existing() {
+        let map: HashTrieMap<String, usize> = HashTrieMap::new();
+
+        assert_eq!(None, map.get(&"test".to_owned()));
+    }
+
+    #[test]
     fn insert_get() {
         let map: HashTrieMap<String, usize, RandomState> = HashTrieMap::new();
 
         map.insert("test".to_owned(), 123);
-        let result = map.get("test".to_owned());
+        let result = map.get(&"test".to_owned());
         assert_eq!(true, result.is_some());
         assert_eq!(result.unwrap(), 123);
+    }
+
+    #[test]
+    fn insert_overwrite() {
+        let map: HashTrieMap<String, usize, RandomState> = HashTrieMap::new();
+
+        map.insert("test".to_owned(), 123);
+        let result = map.get(&"test".to_owned());
+        assert_eq!(true, result.is_some());
+        let first_value = result.unwrap();
+        assert_eq!(first_value, 123);
+
+        map.insert("test".to_owned(), 234);
+        let result = map.get(&"test".to_owned());
+        assert_eq!(true, result.is_some());
+        let second_value = result.unwrap();
+        assert_eq!(second_value, 234);
+
+        // Check that the first result is still valid
+        assert_eq!(first_value, 123);
+    }
+
+    #[test]
+    fn insert_remove() {
+        let map: HashTrieMap<String, usize> = HashTrieMap::new();
+
+        map.insert("test".to_owned(), 123);
+        let result = map.get(&"test".to_owned());
+        assert_eq!(true, result.is_some());
+        let first_value = result.unwrap();
+        assert_eq!(first_value, 123);
+
+        map.remove(&"test".to_owned());
+
+        assert_eq!(None, map.get(&"test".to_owned()));
+
+        assert_eq!(first_value, 123);
     }
 }
