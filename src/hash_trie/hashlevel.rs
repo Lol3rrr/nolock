@@ -1,18 +1,29 @@
 use std::{fmt::Debug, marker::PhantomData, mem::ManuallyDrop, sync::atomic};
 
-use super::mptr::{self, boxed_entry, boxed_hashlevel};
+use crate::hazard_ptr;
+
+use super::{
+    mptr::{self, boxed_entry, boxed_hashlevel},
+    RefValue,
+};
 
 pub(crate) struct HashLevel<K, V, const B: u8> {
+    /// The Level of the HashLevel, this is used to determine which bits should
+    /// be used to lookup the Key/Hash
     level: usize,
+    /// A Ptr to itself
     own: *const HashLevel<K, V, B>,
+    /// The Max-Number of Elements that are in a single Chain
     max_chain: usize,
+    /// A Ptr to the Previous HashLevel
     previous: *const HashLevel<K, V, B>,
-    buckets: Vec<mptr::Atomic>,
+    /// All the buckets for the current one
+    buckets: Vec<mptr::TargetPtr<K, V>>,
     _marker: PhantomData<(K, V)>,
 }
 
 impl<K, V, const B: u8> HashLevel<K, V, B> {
-    /// Creates a new
+    /// Creates a new HashLevel
     pub fn new(previous: *const HashLevel<K, V, B>, level: usize) -> Box<Self> {
         let bucket_count = 2usize.pow(B as u32);
         let buckets = Vec::with_capacity(bucket_count);
@@ -27,12 +38,14 @@ impl<K, V, const B: u8> HashLevel<K, V, B> {
         });
 
         let own_ptr = &*result as *const HashLevel<K, V, B>;
-        let hashlevel_ptr = mptr::mark_as_previous(own_ptr as *const u8) as *mut u8;
         for _ in 0..bucket_count {
-            result.buckets.push(mptr::Atomic::new(hashlevel_ptr));
+            result
+                .buckets
+                .push(mptr::TargetPtr::new_hashlevel(own_ptr as *mut Self));
         }
 
         result.own = own_ptr;
+        println!("Created new HashLevel: {:p} - {}", own_ptr, result.level);
 
         result
     }
@@ -45,30 +58,41 @@ impl<K, V, const B: u8> HashLevel<K, V, B> {
         let mask = (u64::MAX << start) >> start;
         (hash & mask) >> (64 - end)
     }
+
+    /// Calculates the Index of the Bucket for a given Hash
+    fn get_bucket_index(&self, hash: u64) -> usize {
+        self.calc_level_hash(hash) as usize
+    }
 }
 
 impl<K, V, const B: u8> HashLevel<K, V, B>
 where
-    K: Eq + Debug,
-    V: Clone + Debug,
+    K: Eq,
 {
+    /// Attempts to append the Node `n` to the chain of Node `r`. Additionally
+    /// this might cause the allocation of a new HashLevel
     fn adjust_node_on_chain(
         &self,
-        mut n: ManuallyDrop<Box<Entry<K, V>>>,
-        r: ManuallyDrop<Box<Entry<K, V>>>,
+        n: hazard_ptr::Guard<Entry<K, V>>,
+        r: hazard_ptr::Guard<Entry<K, V>>,
         chain: usize,
     ) {
-        if let mptr::PtrTarget::HashLevel(hash_ptr) =
-            r.other.load::<K, V, B>(atomic::Ordering::SeqCst)
-        {
+        let mut tmp_guard: hazard_ptr::Guard<Entry<K, V>> = hazard_ptr::empty_guard();
+
+        // Load the Next-Element in the Chain and if it is Hashlevel
+        if let Some((_, hash_ptr)) = r.other.load::<B>(&mut tmp_guard) {
+            // If the current chain already has the Maximum length, create
+            // a new HashLevel and then move all the Nodes in the Chain
+            // to the new HashLevel as well as then inserting the Node `n`
+            // into the new HashLevel
             if chain == self.max_chain {
                 let new_hash = HashLevel::new(self.own, self.level + 1);
                 let new_hash_ptr = Box::into_raw(new_hash);
 
-                let cas_ptr = mptr::mark_as_previous(hash_ptr as *const u8) as *mut u8;
-                match r.other.cas_hashlevel(
+                let cas_ptr = mptr::mark_as_previous(hash_ptr as *const u8) as *mut Entry<K, V>;
+                match r.other.cas_hashlevel::<B>(
                     cas_ptr,
-                    new_hash_ptr,
+                    new_hash_ptr as *mut (),
                     atomic::Ordering::SeqCst,
                     atomic::Ordering::SeqCst,
                 ) {
@@ -78,10 +102,10 @@ where
                         let bucket_index = self.get_bucket_index(n.hash);
                         let bucket = self.buckets.get(bucket_index).unwrap();
 
-                        match bucket.load::<K, V, B>(atomic::Ordering::SeqCst) {
-                            mptr::PtrTarget::Entry(entry_ref_ptr) => {
-                                let bucket_entry = boxed_entry(entry_ref_ptr);
-                                new_hash.adjust_chain_nodes(bucket_entry);
+                        let mut bucket_guard = hazard_ptr::empty_guard();
+                        match bucket.load::<B>(&mut bucket_guard) {
+                            None => {
+                                new_hash.adjust_chain_nodes(bucket_guard);
                             }
                             _ => {
                                 println!("Expected Bucket to point to Entry");
@@ -89,7 +113,7 @@ where
                             }
                         };
 
-                        bucket.store_hashlevel(new_hash_ptr, atomic::Ordering::SeqCst);
+                        bucket.store_hashlevel(new_hash_ptr as *mut (), atomic::Ordering::SeqCst);
 
                         return;
                     }
@@ -98,131 +122,296 @@ where
                     }
                 };
             } else {
-                let n_ptr = Box::into_raw(ManuallyDrop::into_inner(n));
-                let cas_ptr = mptr::mark_as_previous(hash_ptr as *const u8) as *mut u8;
-                match r.other.cas_entry(
+                // We have reached the End of the Chain, so we should attempt
+                // to simply add the new None to the End of the Chain
+                let n_ptr = n.raw();
+                let cas_ptr = mptr::mark_as_previous(hash_ptr as *const u8) as *mut Entry<K, V>;
+                match r.other.cas_entry::<B>(
                     cas_ptr,
-                    n_ptr,
+                    n_ptr as *mut (),
                     atomic::Ordering::SeqCst,
                     atomic::Ordering::SeqCst,
                 ) {
                     Ok(_) => return,
                     Err(_) => {
-                        n = boxed_entry(n_ptr);
+                        // Something modified the Next-Ptr before us, so we
+                        // should "retry"
                     }
                 }
             }
         }
 
-        match r.other.load(atomic::Ordering::SeqCst) {
-            mptr::PtrTarget::Entry(r) => {
-                let r = boxed_entry(r);
-                self.adjust_node_on_chain(n, r, chain + 1);
+        // Load the next Element in the Chain
+        match r.other.load::<B>(&mut tmp_guard) {
+            // If the next Element is also an Entry, call this function
+            // recursively with the next Entry as the Chain "root"
+            None => {
+                self.adjust_node_on_chain(n, tmp_guard, chain + 1);
             }
-            mptr::PtrTarget::HashLevel(r) => {
-                let mut r = boxed_hashlevel(r);
+            // If the next Element is a HashLevel, try and insert the node
+            // in the next HashLevel after this one
+            Some((mut r, _)) => {
+                // Go back into the previous HashLevel, until you find the
+                // HashLevel, directly "below" the current HashLevel
                 while r.previous != self.own {
                     r = boxed_hashlevel(r.previous as *mut Self);
                 }
 
-                self.adjust_node_on_hash(n)
-            }
-        };
-    }
-
-    fn adjust_node_on_hash(&self, mut n: ManuallyDrop<Box<Entry<K, V>>>) {
-        n.other
-            .store_hashlevel(self.own as *mut Self, atomic::Ordering::SeqCst);
-
-        let bucket_index = self.get_bucket_index(n.hash);
-        let bucket = self.buckets.get(bucket_index).unwrap();
-
-        if let mptr::PtrTarget::HashLevel(level_ptr) =
-            bucket.load::<K, V, B>(atomic::Ordering::SeqCst)
-        {
-            let n_ptr = Box::into_raw(ManuallyDrop::into_inner(n));
-
-            let marked = mptr::mark_as_previous(level_ptr as *const u8) as *mut u8;
-            match bucket.cas_entry(
-                marked,
-                n_ptr,
-                atomic::Ordering::SeqCst,
-                atomic::Ordering::SeqCst,
-            ) {
-                Ok(_) => {
-                    println!("Insert Worked");
-                    return;
-                }
-                Err(_) => {
-                    println!("Insert did not work");
-                    n = boxed_entry(n_ptr);
-                }
-            };
-        }
-
-        match bucket.load::<K, V, B>(atomic::Ordering::SeqCst) {
-            mptr::PtrTarget::Entry(r) => {
-                println!("Bucket has Entry");
-                let r = mptr::boxed_entry(r);
-                self.adjust_node_on_chain(n, r, 1);
-            }
-            mptr::PtrTarget::HashLevel(r) => {
-                println!("Bucket has HashLevel");
-                let r = mptr::boxed_hashlevel(r);
                 r.adjust_node_on_hash(n);
             }
         };
     }
 
-    fn adjust_chain_nodes(&self, r: ManuallyDrop<Box<Entry<K, V>>>) {
-        if let mptr::PtrTarget::Entry(r) = r.other.load::<K, V, B>(atomic::Ordering::SeqCst) {
-            let r = boxed_entry(r);
-            self.adjust_chain_nodes(r);
+    /// Adjusts the Node to fit into the current HashLevel
+    fn adjust_node_on_hash(&self, n: hazard_ptr::Guard<Entry<K, V>>) {
+        // Set the Next-Element to be the current HashLevel
+        n.other
+            .store_hashlevel(self.own as *mut (), atomic::Ordering::SeqCst);
+
+        // Find the corresponding Bucket for the given Node
+        let bucket_index = self.get_bucket_index(n.hash);
+        let bucket = self.buckets.get(bucket_index).unwrap();
+
+        let mut bucket_guard = hazard_ptr::empty_guard();
+
+        // If the Bucket Points to the current HashLevel, the bucket
+        // is empty and we can simply CAS the new Node into the Bucket
+        if let Some((_, level_ptr)) = bucket.load::<B>(&mut bucket_guard) {
+            if level_ptr == self.own as *mut Self {
+                let n_ptr = n.raw();
+
+                let marked = mptr::mark_as_previous(level_ptr as *const u8) as *mut u8;
+                match bucket.cas_entry::<B>(
+                    marked as *mut Entry<K, V>,
+                    n_ptr as *mut (),
+                    atomic::Ordering::SeqCst,
+                    atomic::Ordering::SeqCst,
+                ) {
+                    Ok(_) => {
+                        println!("Insert Worked");
+                        return;
+                    }
+                    Err(_) => {
+                        println!("Insert did not work");
+                    }
+                };
+            }
+        }
+
+        // Load the bucket Entry again
+        match bucket.load::<B>(&mut bucket_guard) {
+            // Bucket already contains a Node
+            None => {
+                println!("Bucket has Entry");
+                self.adjust_node_on_chain(n, bucket_guard, 1);
+            }
+            // Bucket points to a second HashLevel so we should
+            // try and adjust the Node "onto" the newly found
+            // HashLevel
+            Some((r, _)) => {
+                println!("Bucket has HashLevel");
+                r.adjust_node_on_hash(n);
+            }
+        };
+    }
+
+    /// Starts the adjustment process for the given Node as well as starting
+    /// the adjustment for all the Nodes in its Chain
+    fn adjust_chain_nodes(&self, r: hazard_ptr::Guard<Entry<K, V>>) {
+        let mut tmp_guard = hazard_ptr::empty_guard();
+        if let None = r.other.load::<B>(&mut tmp_guard) {
+            self.adjust_chain_nodes(tmp_guard);
         }
         self.adjust_node_on_hash(r);
     }
 
-    fn get_bucket_index(&self, hash: u64) -> usize {
-        self.calc_level_hash(hash) as usize
-    }
+    /// Inserts the new Entry into the current HashLevel
+    fn insert_key_on_hash(&self, hash: u64, key: K, value: V) {
+        let bucket = self.buckets.get(self.get_bucket_index(hash)).expect(
+            "The Bucket should always exist as there Hash should never be bigger than 2^bits",
+        );
 
-    fn insert_key_on_chain(
-        &self,
-        k: u64,
-        r: &Entry<K, V>,
-        mut new_entry: ManuallyDrop<Box<Entry<K, V>>>,
-        chain_pos: usize,
-    ) {
-        if r.key == new_entry.key {
-            println!("Found existing Key");
-            // TODO
-            return;
+        let mut new_entry = ManuallyDrop::new(Box::new(Entry::new_hashlevel(
+            hash,
+            key,
+            value,
+            self.own as *mut Self,
+        )));
+
+        let mut bucket_guard = hazard_ptr::empty_guard();
+
+        // If the
+        if let Some((_, bucket_ptr)) = bucket.load(&mut bucket_guard) {
+            if bucket_ptr == self.own as *mut Self {
+                let n_ptr = Box::into_raw(ManuallyDrop::into_inner(new_entry));
+                let cas_ptr = mptr::mark_as_previous(n_ptr as *const u8) as *mut Entry<K, V>;
+
+                match bucket.cas_entry::<B>(
+                    cas_ptr,
+                    n_ptr as *mut (),
+                    atomic::Ordering::SeqCst,
+                    atomic::Ordering::SeqCst,
+                ) {
+                    Ok(_) => return,
+                    Err(_) => {
+                        new_entry = boxed_entry(n_ptr);
+                    }
+                };
+            }
         }
 
-        if let mptr::PtrTarget::HashLevel(next_ref_r) = r.other.load(atomic::Ordering::SeqCst) {
-            if next_ref_r == self.own as *mut Self {
-                let cas_ptr = mptr::mark_as_previous(next_ref_r as *const u8) as *mut u8;
+        match bucket.load::<B>(&mut bucket_guard) {
+            Some((sub_lvl, sub_lvl_ptr)) => {
+                let raw_new_entry = ManuallyDrop::into_inner(new_entry);
 
-                if chain_pos == self.max_chain {
-                    let new_hash = HashLevel::new(self.own, self.level + 1);
+                sub_lvl.insert_key_on_hash(
+                    raw_new_entry.hash,
+                    raw_new_entry.key,
+                    raw_new_entry.value,
+                );
+            }
+            None => {
+                bucket_guard.insert_key_on_chain(hash, &self, new_entry, 1);
+            }
+        };
+    }
+
+    pub fn insert(&self, hash: u64, key: K, value: V) {
+        self.insert_key_on_hash(hash, key, value);
+    }
+
+    pub fn get(&self, hash: u64, key: &K) -> Option<RefValue<K, V>> {
+        let bucket_index = self.get_bucket_index(hash);
+        let bucket = self.buckets.get(bucket_index).expect(
+            "The Bucket should always exist as there Hash should never be bigger than 2^bits",
+        );
+
+        let mut bucket_guard = hazard_ptr::empty_guard();
+
+        if let Some((_, bucket_ptr)) = bucket.load(&mut bucket_guard) {
+            if bucket_ptr == self.own as *mut Self {
+                return None;
+            }
+        }
+
+        match bucket.load::<B>(&mut bucket_guard) {
+            None => match bucket_guard.get_chain(hash, &self, key, 1) {
+                Ok(v) => Some(v),
+                Err(found) if found => Some(RefValue {
+                    guard: bucket_guard,
+                }),
+                _ => None,
+            },
+            Some((sub_lvl, bucket_ptr)) => sub_lvl.get(hash, key),
+        }
+    }
+}
+
+impl<K, V, const B: u8> Debug for HashLevel<K, V, B>
+where
+    K: Debug,
+    V: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let padding = String::from_utf8(vec![b' '; self.level + 1]).unwrap();
+
+        writeln!(f, "{}Own: {:p}", padding, self.own)?;
+        let mut bucket_guard = hazard_ptr::empty_guard();
+        for bucket in self.buckets.iter() {
+            match bucket.load::<B>(&mut bucket_guard) {
+                None => {
+                    writeln!(f, "{}{:?}", padding, bucket_guard)?;
+                }
+                Some((sub_lvl, hashlvl_ptr)) if hashlvl_ptr != self.own as *mut Self => {
+                    writeln!(f, "{}HashLevel:", padding)?;
+                    write!(f, "{:?}", sub_lvl)?;
+                    std::mem::forget(sub_lvl);
+                }
+                Some((_, hashlvl_ptr)) if hashlvl_ptr == self.own as *mut Self => {
+                    writeln!(f, "{}Empty", padding)?;
+                }
+                _ => {}
+            };
+        }
+        Ok(())
+    }
+}
+
+pub(crate) struct Entry<K, V> {
+    hash: u64,
+    key: K,
+    pub value: V,
+    other: mptr::TargetPtr<K, V>,
+}
+
+impl<K, V> Entry<K, V> {
+    pub fn new_hashlevel<const B: u8>(
+        hash: u64,
+        key: K,
+        value: V,
+        next: *mut HashLevel<K, V, B>,
+    ) -> Self {
+        Self {
+            hash,
+            key,
+            value,
+            other: mptr::TargetPtr::new_hashlevel(next),
+        }
+    }
+}
+
+impl<K, V> Entry<K, V>
+where
+    K: Eq,
+{
+    /// Appends the `new_entry` onto the current Chain of Entrys
+    pub fn insert_key_on_chain<const B: u8>(
+        &self,
+        k: u64,
+        h: &HashLevel<K, V, B>,
+        mut new_entry: ManuallyDrop<Box<Self>>,
+        chain_pos: usize,
+    ) {
+        // If the current Node `r` matches given Key, we have found the Target
+        // Node/Place
+        if self.key == new_entry.key {
+            println!("Found existing Key");
+            todo!()
+            //return;
+        }
+
+        let mut other_guard = hazard_ptr::empty_guard();
+        match self.other.load(&mut other_guard) {
+            // If the next element in the Chain is a HashLevel and points to
+            // the current HashLevel, we have reached the end of the Chain
+            // and should attempt to insert the Element there
+            Some((_, next_ref_r)) if next_ref_r == h.own as *mut HashLevel<K, V, B> => {
+                let expected_ptr = mptr::mark_as_previous(h.own as *const u8) as *mut Entry<K, V>;
+
+                // If we reached the Maximum Chain-Length, create a new HashLevel
+                // and transfer the Nodes of the current Chain to the new
+                // HashLevel
+                if chain_pos == h.max_chain {
+                    let new_hash = HashLevel::new(h.own, h.level + 1);
                     let new_hash_ptr = Box::into_raw(new_hash);
-                    match r.other.cas_hashlevel(
-                        cas_ptr,
-                        new_hash_ptr,
+                    match self.other.cas_hashlevel::<B>(
+                        expected_ptr,
+                        new_hash_ptr as *mut (),
                         atomic::Ordering::SeqCst,
                         atomic::Ordering::SeqCst,
                     ) {
                         Ok(_) => {
-                            let bucket_index = self.get_bucket_index(k);
-                            let bucket = self.buckets.get(bucket_index).expect(
+                            let bucket_index = h.get_bucket_index(k);
+                            let bucket = h.buckets.get(bucket_index).expect(
                                 "The Bucket should exist, as it there are always enough buckets",
                             );
 
-                            match bucket.load::<K, V, B>(atomic::Ordering::SeqCst) {
-                                mptr::PtrTarget::Entry(entry_ref_ptr) => {
+                            let mut bucket_guard = hazard_ptr::empty_guard();
+
+                            match bucket.load::<B>(&mut bucket_guard) {
+                                None => {
                                     let new_hash = boxed_hashlevel(new_hash_ptr);
-                                    let bucket_entry = boxed_entry(entry_ref_ptr);
-                                    new_hash.adjust_chain_nodes(bucket_entry);
+                                    new_hash.adjust_chain_nodes(bucket_guard);
                                 }
                                 _ => {
                                     println!("Expected Bucket to point to Entry");
@@ -230,7 +419,8 @@ where
                                 }
                             };
 
-                            bucket.store_hashlevel(new_hash_ptr, atomic::Ordering::SeqCst);
+                            bucket
+                                .store_hashlevel(new_hash_ptr as *mut (), atomic::Ordering::SeqCst);
 
                             let new_hash = boxed_hashlevel(new_hash_ptr);
 
@@ -251,9 +441,9 @@ where
                     return;
                 } else {
                     let new_entry_ptr = Box::into_raw(ManuallyDrop::into_inner(new_entry));
-                    match r.other.cas_entry(
-                        cas_ptr,
-                        new_entry_ptr,
+                    match self.other.cas_entry::<B>(
+                        expected_ptr,
+                        new_entry_ptr as *mut (),
                         atomic::Ordering::SeqCst,
                         atomic::Ordering::SeqCst,
                     ) {
@@ -265,190 +455,58 @@ where
                     };
                 }
             }
-        }
+            _ => {}
+        };
 
-        match r.other.load(atomic::Ordering::SeqCst) {
-            mptr::PtrTarget::Entry(r) => {
-                let r = boxed_entry(r);
-                self.insert_key_on_chain(k, &r, new_entry, chain_pos + 1);
+        // Load the Next-Element in the Chain
+        match self.other.load(&mut other_guard) {
+            // If the Next-Element is also an Entry, try to insert the new
+            // Element into the Chain
+            None => {
+                other_guard.insert_key_on_chain(k, h, new_entry, chain_pos + 1);
             }
-            mptr::PtrTarget::HashLevel(r) => {
-                let mut r = boxed_hashlevel(r);
-                while r.previous != self.own {
-                    let n_r = r.previous as *mut Self;
-                    r = boxed_hashlevel(n_r);
+            // If the Next-Element is a second HashLevel, try and insert
+            // the New Node on the Second-Level HashLevel
+            Some((mut h, _)) => {
+                // Find the second level HashLevel
+                while h.previous != h.own {
+                    let n_r = h.previous as *mut HashLevel<K, V, B>;
+                    h = boxed_hashlevel(n_r);
                 }
 
                 let inner_entry = ManuallyDrop::into_inner(new_entry);
-                r.insert_key_on_hash(k, inner_entry.key, inner_entry.value);
+                h.insert_key_on_hash(k, inner_entry.key, inner_entry.value);
             }
         };
     }
 
-    fn insert_key_on_hash(&self, hash: u64, key: K, value: V) {
-        let bucket = self.buckets.get(self.get_bucket_index(hash)).expect(
-            "The Bucket should always exist as there Hash should never be bigger than 2^bits",
-        );
-
-        let own_marked_ptr = mptr::mark_as_previous(self.own as *const u8) as *mut u8;
-        let mut new_entry =
-            ManuallyDrop::new(Box::new(Entry::new(hash, key, value, own_marked_ptr)));
-
-        let bucket_ptr = bucket.load(atomic::Ordering::SeqCst);
-        if let mptr::PtrTarget::HashLevel(bucket_ptr) = bucket_ptr {
-            if bucket_ptr == self.own as *mut Self {
-                let n_ptr = Box::into_raw(ManuallyDrop::into_inner(new_entry));
-                let cas_ptr = mptr::mark_as_previous(bucket_ptr as *const u8) as *mut u8;
-
-                match bucket.cas_entry(
-                    cas_ptr,
-                    n_ptr,
-                    atomic::Ordering::SeqCst,
-                    atomic::Ordering::SeqCst,
-                ) {
-                    Ok(_) => return,
-                    Err(_) => {
-                        new_entry = boxed_entry(n_ptr);
-                    }
-                };
-            }
-        }
-
-        let bucket_ptr = bucket.load::<K, V, B>(atomic::Ordering::SeqCst);
-        match bucket_ptr {
-            mptr::PtrTarget::HashLevel(bucket_ptr) => {
-                let raw_new_entry = ManuallyDrop::into_inner(new_entry);
-
-                let sub_lvl = boxed_hashlevel(bucket_ptr);
-                sub_lvl.insert_key_on_hash(
-                    raw_new_entry.hash,
-                    raw_new_entry.key,
-                    raw_new_entry.value,
-                );
-            }
-            mptr::PtrTarget::Entry(bucket_ptr) => {
-                let current_entry = boxed_entry(bucket_ptr);
-                self.insert_key_on_chain(hash, &current_entry, new_entry, 1);
-            }
-        };
-    }
-
-    pub fn insert(&self, hash: u64, key: K, value: V) {
-        self.insert_key_on_hash(hash, key, value);
-    }
-
-    fn get_chain(
+    fn get_chain<const B: u8>(
         &self,
         hash: u64,
-        current_entry: &Entry<K, V>,
+        current_hash: &HashLevel<K, V, B>,
         key: &K,
         chain_pos: usize,
-    ) -> Option<V> {
-        if &current_entry.key == key {
-            return Some(current_entry.value.clone());
+    ) -> Result<RefValue<K, V>, bool> {
+        if &self.key == key {
+            return Err(true);
         }
 
-        let next_ptr = current_entry.other.load(atomic::Ordering::SeqCst);
-
-        match next_ptr {
-            mptr::PtrTarget::HashLevel(next_ptr) => {
-                if next_ptr == self.own as *mut Self {
-                    return None;
+        let mut other_guard = hazard_ptr::empty_guard();
+        match self.other.load(&mut other_guard) {
+            Some((_, next_ptr)) => {
+                if next_ptr == current_hash.own as *mut HashLevel<K, V, B> {
+                    return Err(false);
                 }
 
                 // TODO
                 println!("Is new List");
-                None
+                Err(false)
             }
-            mptr::PtrTarget::Entry(next_ptr) => {
-                let next_entry = boxed_entry(next_ptr);
-                self.get_chain(hash, &next_entry, key, chain_pos + 1)
-            }
-        }
-    }
-
-    fn get(&self, hash: u64, key: &K) -> Option<V> {
-        let bucket_index = self.get_bucket_index(hash);
-        let bucket = self.buckets.get(bucket_index).expect(
-            "The Bucket should always exist as there Hash should never be bigger than 2^bits",
-        );
-
-        let bucket_ptr = bucket.load(atomic::Ordering::SeqCst);
-        if let mptr::PtrTarget::HashLevel(bucket_ptr) = bucket_ptr {
-            if bucket_ptr == self.own as *mut Self {
-                return None;
-            }
-        }
-
-        let bucket_ptr = bucket.load::<K, V, B>(atomic::Ordering::SeqCst);
-        match bucket_ptr {
-            mptr::PtrTarget::Entry(bucket_ptr) => {
-                let current_entry = boxed_entry(bucket_ptr);
-                self.get_chain(hash, &current_entry, key, 1)
-            }
-            mptr::PtrTarget::HashLevel(bucket_ptr) => {
-                let sub_lvl = boxed_hashlevel(bucket_ptr);
-                sub_lvl.get(hash, key)
-            }
-        }
-    }
-}
-
-impl<K, V, const B: u8> HashLevel<K, V, B>
-where
-    K: Eq + Debug,
-    V: Clone + Debug,
-{
-    pub fn get_clone(&self, hash: u64, key: &K) -> Option<V> {
-        self.get(hash, key)
-    }
-}
-
-impl<K, V, const B: u8> Debug for HashLevel<K, V, B>
-where
-    K: Debug,
-    V: Debug,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let padding = String::from_utf8(vec![b' '; self.level + 1]).unwrap();
-
-        writeln!(f, "{}Own: {:p}", padding, self.own)?;
-        for bucket in self.buckets.iter() {
-            match bucket.load::<K, V, B>(atomic::Ordering::SeqCst) {
-                mptr::PtrTarget::Entry(entry_ptr) => {
-                    let entry = boxed_entry(entry_ptr);
-                    writeln!(f, "{}{:?}", padding, entry)?;
-                }
-                mptr::PtrTarget::HashLevel(hashlvl_ptr) if hashlvl_ptr != self.own as *mut Self => {
-                    let sub_lvl = ManuallyDrop::into_inner(boxed_hashlevel(hashlvl_ptr));
-                    writeln!(f, "{}HashLevel:", padding)?;
-                    write!(f, "{:?}", sub_lvl)?;
-                    std::mem::forget(sub_lvl);
-                }
-                mptr::PtrTarget::HashLevel(hashlvl_ptr) if hashlvl_ptr == self.own as *mut Self => {
-                    writeln!(f, "{}Empty", padding)?;
-                }
-                _ => {}
-            };
-        }
-        Ok(())
-    }
-}
-
-pub(crate) struct Entry<K, V> {
-    hash: u64,
-    key: K,
-    value: V,
-    other: mptr::Atomic,
-}
-
-impl<K, V> Entry<K, V> {
-    pub fn new(hash: u64, key: K, value: V, next: *mut u8) -> Self {
-        Self {
-            hash,
-            key,
-            value,
-            other: mptr::Atomic::new(next),
+            None => match other_guard.get_chain(hash, &current_hash, key, chain_pos + 1) {
+                Ok(v) => Ok(v),
+                Err(found) if found => Ok(RefValue { guard: other_guard }),
+                _ => Err(false),
+            },
         }
     }
 }
@@ -459,9 +517,10 @@ where
     V: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let other_ptr = match self.other.load::<K, V, 0>(atomic::Ordering::SeqCst) {
-            mptr::PtrTarget::Entry(p) => p as *const u8,
-            mptr::PtrTarget::HashLevel(p) => p as *const u8,
+        let mut other_guard = hazard_ptr::empty_guard();
+        let other_ptr = match self.other.load::<0>(&mut other_guard) {
+            None => other_guard.raw() as *const u8,
+            Some((_, p)) => p as *const u8,
         };
 
         write!(
@@ -489,6 +548,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn hash_level_insert_get() {
         let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0);
 
@@ -497,9 +557,10 @@ mod tests {
         let value = 123;
         hl.insert(hash, key, value);
 
-        assert_eq!(Some(value), hl.get_clone(hash, &16));
+        assert_eq!(hl.get(hash, &16).unwrap(), value);
     }
     #[test]
+    #[ignore]
     fn hash_level_insert_get_collision() {
         let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0);
 
@@ -510,10 +571,11 @@ mod tests {
 
         hl.insert(hash, 17, 124);
 
-        assert_eq!(Some(124), hl.get_clone(hash, &17));
+        assert_eq!(hl.get(hash, &17).unwrap(), 124);
     }
 
     #[test]
+    #[ignore]
     fn hash_level_insert_collision_expand() {
         let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0);
 
@@ -524,9 +586,9 @@ mod tests {
 
         println!("HashLevel: {:?}", hl);
 
-        assert_eq!(Some(123), hl.get_clone(0x1234567890abcdef, &13));
-        assert_eq!(Some(124), hl.get_clone(0x1234567890abcdef, &14));
-        assert_eq!(Some(125), hl.get_clone(0x1334567890abcdef, &15));
-        assert_eq!(Some(126), hl.get_clone(0x1334567890abcdef, &16));
+        assert_eq!(hl.get(0x1234567890abcdef, &13).unwrap(), 123);
+        assert_eq!(hl.get(0x1234567890abcdef, &14).unwrap(), 124);
+        assert_eq!(hl.get(0x1334567890abcdef, &15).unwrap(), 125);
+        assert_eq!(hl.get(0x1334567890abcdef, &16).unwrap(), 126);
     }
 }

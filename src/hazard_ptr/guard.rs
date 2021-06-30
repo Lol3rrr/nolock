@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::mem::ManuallyDrop;
 
 use std::ops::Deref;
@@ -17,6 +18,12 @@ pub struct Guard<T> {
     /// The Queue-Sender on which to return the Hazard-Record once the Guard
     /// is dropped to have a simpler schema for reusing Hazard-Pointers locally
     pub(crate) record_returner: jiffy::Sender<*mut Record<()>>,
+}
+
+impl<T> Debug for Guard<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Guard ()")
+    }
 }
 
 impl<T> Drop for Guard<T> {
@@ -82,10 +89,5 @@ impl<T> Guard<T> {
     /// Converts the Guard into a Guard for a differnt underlying Type
     pub unsafe fn convert<O>(self) -> Guard<O> {
         std::mem::transmute(self)
-    }
-
-    /// TODO
-    pub unsafe fn set_inner(&mut self, n_ptr: *mut T) {
-        self.inner = n_ptr;
     }
 }

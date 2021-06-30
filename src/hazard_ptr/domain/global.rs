@@ -1,4 +1,4 @@
-use std::{collections::HashSet, mem::ManuallyDrop, sync::atomic};
+use std::{collections::HashSet, fmt::Debug, mem::ManuallyDrop, sync::atomic};
 
 use crate::hazard_ptr::Record;
 
@@ -6,6 +6,12 @@ use crate::hazard_ptr::Record;
 /// is mainly the List of all Hazards in the current Domain
 pub struct DomainGlobal {
     records: atomic::AtomicPtr<Record<()>>,
+}
+
+impl Debug for DomainGlobal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Domain-Global ()")
+    }
 }
 
 impl DomainGlobal {

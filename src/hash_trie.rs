@@ -8,11 +8,51 @@ use std::{
     fmt::Debug,
     hash::{BuildHasher, Hash, Hasher},
     marker::PhantomData,
+    ops::Deref,
 };
 
 mod hashlevel;
 mod mptr;
 use hashlevel::{Entry, HashLevel};
+
+use crate::hazard_ptr;
+
+/// TODO
+#[derive(Debug)]
+pub struct RefValue<K, V> {
+    guard: hazard_ptr::Guard<Entry<K, V>>,
+}
+
+impl<K, V> RefValue<K, V> {
+    /// TODO
+    pub fn value(&self) -> &V {
+        &self.guard.value
+    }
+}
+
+impl<K, V> AsRef<V> for RefValue<K, V> {
+    fn as_ref(&self) -> &V {
+        self.value()
+    }
+}
+
+impl<K, V> PartialEq for RefValue<K, V>
+where
+    V: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.value().eq(other.value())
+    }
+}
+
+impl<K, V> PartialEq<V> for RefValue<K, V>
+where
+    V: PartialEq,
+{
+    fn eq(&self, other: &V) -> bool {
+        self.value().eq(other)
+    }
+}
 
 /// A Concurrent and Lock-Free HashTrieMap
 pub struct HashTrieMap<K, V, H = RandomState> {
@@ -31,6 +71,12 @@ impl<K, V> HashTrieMap<K, V, RandomState> {
 impl<K, V> Default for HashTrieMap<K, V, RandomState> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<K, V, H> Debug for HashTrieMap<K, V, H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HashTrieMap ()")
     }
 }
 
@@ -66,12 +112,12 @@ where
     }
 
     /// Clones out a value from the Hash-Trie-Map
-    pub fn get_cloned(&self, key: K) -> Option<V> {
+    pub fn get(&self, key: K) -> Option<RefValue<K, V>> {
         let mut hasher = self.build_hasher.build_hasher();
         key.hash(&mut hasher);
         let hash = hasher.finish();
 
-        self.initial_level.get_clone(hash, &key)
+        self.initial_level.get(hash, &key)
     }
 }
 
@@ -84,7 +130,8 @@ mod tests {
         let map: HashTrieMap<String, usize, RandomState> = HashTrieMap::new();
 
         map.insert("test".to_owned(), 123);
-        let result = map.get_cloned("test".to_owned());
-        assert_eq!(Some(123), result);
+        let result = map.get("test".to_owned());
+        assert_eq!(true, result.is_some());
+        assert_eq!(result.unwrap(), 123);
     }
 }

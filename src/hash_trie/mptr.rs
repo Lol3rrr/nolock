@@ -1,5 +1,63 @@
+use crate::hazard_ptr;
+
 use super::{Entry, HashLevel};
 use std::{mem::ManuallyDrop, sync::atomic};
+
+pub(crate) struct TargetPtr<K, V>(atomic::AtomicPtr<Entry<K, V>>);
+
+impl<K, V> TargetPtr<K, V> {
+    pub fn new_entry(ptr: *mut Entry<K, V>) -> Self {
+        let marked = mark_as_entry(ptr as *const u8) as *mut Entry<K, V>;
+        Self(atomic::AtomicPtr::new(marked))
+    }
+    pub fn new_hashlevel<const B: u8>(ptr: *mut HashLevel<K, V, B>) -> Self {
+        let marked = mark_as_previous(ptr as *const u8) as *mut Entry<K, V>;
+        Self(atomic::AtomicPtr::new(marked))
+    }
+
+    pub fn load<const B: u8>(
+        &self,
+        tmp_guard: &mut hazard_ptr::Guard<Entry<K, V>>,
+    ) -> Option<(
+        ManuallyDrop<Box<HashLevel<K, V, B>>>,
+        *mut HashLevel<K, V, B>,
+    )> {
+        tmp_guard.protect(&self.0, atomic::Ordering::SeqCst);
+        if is_entry(tmp_guard.raw() as *const u8) {
+            None
+        } else {
+            let ptr = to_actual_ptr(tmp_guard.raw() as *const u8) as *const ();
+            let ptr = ptr as *mut HashLevel<K, V, B>;
+            Some((ManuallyDrop::new(unsafe { Box::from_raw(ptr) }), ptr))
+        }
+    }
+
+    pub fn store_hashlevel(&self, ptr: *mut (), order: atomic::Ordering) {
+        let marked = mark_as_previous(ptr as *const u8) as *mut Entry<K, V>;
+        self.0.store(marked, order);
+    }
+
+    pub fn cas_hashlevel<const B: u8>(
+        &self,
+        current: *mut Entry<K, V>,
+        new: *mut (),
+        success: atomic::Ordering,
+        failure: atomic::Ordering,
+    ) -> Result<*mut Entry<K, V>, *mut Entry<K, V>> {
+        let marked = mark_as_previous(new as *const u8) as *mut Entry<K, V>;
+        self.0.compare_exchange(current, marked, success, failure)
+    }
+    pub fn cas_entry<const B: u8>(
+        &self,
+        current: *mut Entry<K, V>,
+        new: *mut (),
+        success: atomic::Ordering,
+        failure: atomic::Ordering,
+    ) -> Result<*mut Entry<K, V>, *mut Entry<K, V>> {
+        let marked = mark_as_entry(new as *const u8) as *mut Entry<K, V>;
+        self.0.compare_exchange(current, marked, success, failure)
+    }
+}
 
 pub(crate) enum PtrTarget<K, V, const B: u8> {
     HashLevel(*mut HashLevel<K, V, B>),

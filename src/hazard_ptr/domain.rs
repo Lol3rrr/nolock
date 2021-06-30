@@ -1,7 +1,7 @@
 mod global;
 
 pub use global::DomainGlobal;
-use std::sync::atomic;
+use std::{fmt::Debug, sync::atomic};
 
 use crate::queues::mpsc::jiffy;
 
@@ -22,6 +22,12 @@ pub struct Domain {
     /// algorithm, that have not yet been reclaimed and may still be in use
     /// by some other Part of the overall system
     r_list: Vec<RetireNode<()>>,
+}
+
+impl Debug for Domain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Domain ()")
+    }
 }
 
 impl Drop for Domain {

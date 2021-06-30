@@ -4,6 +4,7 @@
 //! * [Jiffy: A Fast, Memory Efficient, Wait-Free Multi-Producers Single-Consumer Queue](https://arxiv.org/pdf/2010.14189.pdf)
 
 use std::{
+    fmt::Debug,
     mem::ManuallyDrop,
     sync::{atomic, Arc},
 };
@@ -28,7 +29,7 @@ pub struct Receiver<T> {
 
 impl<T> Sender<T> {
     /// Enqueues the given piece of Data
-    pub fn enqueue(&mut self, data: T) {
+    pub fn enqueue(&self, data: T) {
         let location = self.tail.fetch_add(1, atomic::Ordering::SeqCst);
 
         let mut tmp_buffer_ptr = self.tail_of_queue.load(atomic::Ordering::Acquire);
@@ -70,6 +71,12 @@ impl<T> Clone for Sender<T> {
             tail: self.tail.clone(),
             tail_of_queue: self.tail_of_queue.clone(),
         }
+    }
+}
+
+impl<T> Debug for Sender<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Sender ()")
     }
 }
 
@@ -192,6 +199,12 @@ impl<T> Receiver<T> {
 
 unsafe impl<T> Send for Receiver<T> {}
 
+impl<T> Debug for Receiver<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Receiver ()")
+    }
+}
+
 /// Creates a new empty Queue
 pub fn queue<T>() -> (Receiver<T>, Sender<T>) {
     let initial_buffer = BufferList::boxed(std::ptr::null(), 1);
@@ -224,14 +237,14 @@ mod tests {
 
     #[test]
     fn enqueue_one() {
-        let (_, mut tx) = queue();
+        let (_, tx) = queue();
 
         tx.enqueue(13);
     }
 
     #[test]
     fn enqueue_dequeue() {
-        let (mut rx, mut tx) = queue();
+        let (mut rx, tx) = queue();
 
         tx.enqueue(13);
         assert_eq!(Some(13), rx.dequeue());
@@ -239,7 +252,7 @@ mod tests {
 
     #[test]
     fn enqueue_fill_one_buffer() {
-        let (mut rx, mut tx) = queue();
+        let (mut rx, tx) = queue();
 
         let elements = BUFFER_SIZE + 2;
         for i in 0..elements {
