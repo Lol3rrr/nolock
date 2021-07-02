@@ -25,3 +25,13 @@ pub fn spsc_unbounded_queue_inserts(ctx: &mut Criterion) {
         });
     });
 }
+
+pub fn bounded_enqueue_dequeue(ctx: &mut Criterion) {
+    ctx.bench_function("spsc-bounded-enqueue-dequeue", |b| {
+        let (mut rx, mut tx) = nolock::queues::spsc::bounded::bounded_queue(16);
+        b.iter(|| {
+            assert_eq!(Ok(()), tx.try_enqueue(13));
+            assert_eq!(Ok(13), rx.try_dequeue());
+        });
+    });
+}

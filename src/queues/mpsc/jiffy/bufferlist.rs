@@ -183,33 +183,47 @@ impl<T> BufferList<T> {
 
     /// This attempts to allocate a new BufferList and store it as the next-Ptr for
     /// this Buffer as well as storing it as the new Tail-Of-Queue
-    pub fn allocate_next(
-        &self,
-        self_ptr: *mut BufferList<T>,
-        tail_of_queue: &atomic::AtomicPtr<BufferList<T>>,
-    ) {
-        let next_buffer =
-            BufferList::boxed(self_ptr as *const BufferList<T>, self.position_in_queue + 1);
+    pub fn allocate_next(&self, self_ptr: *mut Self, tail_of_queue: &atomic::AtomicPtr<Self>) {
+        // Create/Allocate the new Buffer
+        let next_buffer = BufferList::boxed(self_ptr as *const Self, self.position_in_queue + 1);
         let next_buffer_ptr = Box::into_raw(next_buffer);
 
+        // Try to append the new Buffer to this one.
+        //
+        // If this FAILS, that means that another Thread already created a new
+        // Buffer and appended it to this one. In that case, we should simply
+        // cleanup the new Buffer we created and exit, because essentially
+        // the other Thread did the same thing we tried to accomplish so there
+        // is nothing for us left to do.
+        //
+        // If this SUCCEDS, that means we appended our Buffer to the Queue and
+        // that we should now also update the Tail of the Queue pointer, as our
+        // new Queue is now the latest Element
         match self.next.compare_exchange(
             std::ptr::null_mut(),
             next_buffer_ptr,
             atomic::Ordering::SeqCst,
-            atomic::Ordering::SeqCst,
+            atomic::Ordering::Acquire,
         ) {
             Ok(_) => {
+                // Attempt to Store our pointer as the Tail of the Queue, as we
+                // have now successfully appended the new Buffer to the current
+                // Buffer, which was previously the Tail, meaning that the new
+                // one is the new Tail
                 if tail_of_queue
                     .compare_exchange(
                         self_ptr,
                         next_buffer_ptr,
                         atomic::Ordering::SeqCst,
-                        atomic::Ordering::SeqCst,
+                        atomic::Ordering::Acquire,
                     )
                     .is_ok()
                 {}
             }
             Err(_) => {
+                // Someone else already created the next Buffer following the
+                // current one, meaning that we should just clean up the Buffer
+                // we created and then we have to do nothing more
                 drop(unsafe { Box::from_raw(next_buffer_ptr) });
             }
         };

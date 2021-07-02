@@ -30,35 +30,66 @@ pub struct Receiver<T> {
 impl<T> Sender<T> {
     /// Enqueues the given piece of Data
     pub fn enqueue(&self, data: T) {
+        // Load our target absolute position, on where to insert the next
+        // Element
+        //
+        // This needs to use Ordering::SeqCst because we would otherwise have
+        // one half of the load-store operation be Ordering::Relaxed, which
+        // is not what we need
         let location = self.tail.fetch_add(1, atomic::Ordering::SeqCst);
 
+        // Get the current tail-buffer, where we would initially attempt to
+        // insert the Element into
         let mut tmp_buffer_ptr = self.tail_of_queue.load(atomic::Ordering::Acquire);
         let mut tmp_buffer = ManuallyDrop::new(unsafe { Box::from_raw(tmp_buffer_ptr) });
 
+        // Get the current End position of the received buffer
         let mut end = tmp_buffer.position_in_queue * BUFFER_SIZE;
+        // If the Target-Location is beyond the current Buffer, we need
+        // to either create a new Buffer and append it to the Queue or
+        // simply walk the List of Buffers in the Queue until we find one
+        // that is larger than our Target-Location.
+        // However this does not garantuee, that the resulting buffer
+        // actually contains our Target-Location, because the buffer we
+        // find could come after the Buffer that we actually need
         while location >= end {
+            // If the currently loaded Buffer has no next Ptr, meaning
+            // it is currently the last Buffer in the Queue, we need to
+            // create a new Buffer and append it
             if tmp_buffer.next.load(atomic::Ordering::Acquire).is_null() {
+                // Attempt to allocate a new Buffer
                 tmp_buffer.allocate_next(tmp_buffer_ptr, &self.tail_of_queue);
             }
 
+            // Load the new Tail of the Queue
             tmp_buffer_ptr = self.tail_of_queue.load(atomic::Ordering::Acquire);
             tmp_buffer = ManuallyDrop::new(unsafe { Box::from_raw(tmp_buffer_ptr) });
 
+            // Recalculate the current End of the new Tail-Buffer
             end = tmp_buffer.position_in_queue * BUFFER_SIZE;
         }
 
+        // Calculate the Starting-Location of the currently loaded
+        // Buffer
         let mut start = (tmp_buffer.position_in_queue - 1) * BUFFER_SIZE;
+        // If the Target-Location is before the current Buffer's start,
+        // we need to move back in the List of Buffers until we find the one
+        // that actually contains our Target-Location
         while location < start {
+            // Load the previous Buffer in regards to our current one
             tmp_buffer_ptr = tmp_buffer.previous as *mut BufferList<T>;
             tmp_buffer = ManuallyDrop::new(unsafe { Box::from_raw(tmp_buffer_ptr) });
 
+            // Recalculate the Buffers Starting position for the new one
             start = (tmp_buffer.position_in_queue - 1) * BUFFER_SIZE;
         }
 
+        // Calculate the concrete Target-Index in the final Buffer
         let index = location - start;
 
-        let node = tmp_buffer.buffer.get(index).unwrap();
-        node.store(data);
+        // Actually store the Data into the Buffer at the previously
+        // calculated Index
+        tmp_buffer.buffer[index].store(data);
 
         // TODO
         // Possible optimization regarding to pre-allocate the next buffer early

@@ -30,13 +30,14 @@ impl<T> BoundedSender<T> {
     /// Attempts to Enqueue the given piece of Data
     pub fn try_enqueue(&mut self, data: T) -> Result<(), (T, EnqueueError)> {
         if !self.buffer[self.head]
-            .load(atomic::Ordering::SeqCst)
+            .load(atomic::Ordering::Acquire)
             .is_null()
         {
             return Err((data, EnqueueError::WouldBlock));
         }
 
-        self.buffer[self.head].store(Box::into_raw(Box::new(data)), atomic::Ordering::SeqCst);
+        self.buffer[self.head].store(Box::into_raw(Box::new(data)), atomic::Ordering::Release);
+        self.head = next_element(self.head, self.buffer.len());
 
         Ok(())
     }
@@ -44,7 +45,7 @@ impl<T> BoundedSender<T> {
     /// Checks if the current Queue is full
     pub fn is_full(&self) -> bool {
         !self.buffer[self.head]
-            .load(atomic::Ordering::SeqCst)
+            .load(atomic::Ordering::Acquire)
             .is_null()
     }
 }
@@ -58,12 +59,14 @@ impl<T> Debug for BoundedSender<T> {
 impl<T> BoundedReceiver<T> {
     /// Attempts to Dequeue the given piece of Data
     pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
-        let data_ptr = self.buffer[self.tail].load(atomic::Ordering::SeqCst);
+        let buffer_entry = &self.buffer[self.tail];
+
+        let data_ptr = buffer_entry.load(atomic::Ordering::Acquire);
         if data_ptr.is_null() {
             return Err(DequeueError::WouldBlock);
         }
 
-        self.buffer[self.tail].store(std::ptr::null_mut(), atomic::Ordering::SeqCst);
+        buffer_entry.store(std::ptr::null_mut(), atomic::Ordering::Release);
         self.tail = next_element(self.tail, self.buffer.len());
 
         let boxed_data = unsafe { Box::from_raw(data_ptr) };
@@ -74,7 +77,7 @@ impl<T> BoundedReceiver<T> {
     /// Checks if the current queue is empty
     pub fn is_empty(&self) -> bool {
         self.buffer[self.tail]
-            .load(atomic::Ordering::SeqCst)
+            .load(atomic::Ordering::Acquire)
             .is_null()
     }
 }
@@ -126,5 +129,15 @@ mod tests {
         let (mut rx, _) = bounded_queue::<usize>(1);
 
         assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
+    }
+
+    #[test]
+    fn enqueue_dequeue_full_buffer() {
+        let (mut rx, mut tx) = bounded_queue(3);
+
+        for i in 0..4 {
+            assert_eq!(Ok(()), tx.try_enqueue(i));
+            assert_eq!(Ok(i), rx.try_dequeue());
+        }
     }
 }
