@@ -118,23 +118,35 @@ impl<T> Receiver<T> {
         ManuallyDrop::new(unsafe { Box::from_raw(ptr as *mut BufferList<T>) })
     }
 
+    /// Checks if the end of the current Buffer has been reached and if that
+    /// is the case, we need to attempt to switch over to the next Buffer in
+    /// the List of Buffers
     fn move_to_next_buffer(&mut self) -> bool {
+        // Load the current Buffer
         let current_queue = self.load_head_of_queue();
 
+        // If the current Queue has reached its end, we should attempt to
+        // switch over to the next Buffer
         if current_queue.head >= BUFFER_SIZE {
             // Lines 63 - 65
             // can be ommited in this case as the next_ptr will then also be 0 and therefore
             // the next check should catch that
 
-            let next_ptr = current_queue.next.load(atomic::Ordering::SeqCst);
+            // Load the ptr to the next Buffer from the current Buffer
+            let next_ptr = current_queue.next.load(atomic::Ordering::Acquire);
+            // If the PTR is null, that means there is currently no next Buffer
+            // and we should just return early
             if next_ptr.is_null() {
                 return false;
             }
 
+            // Load the current Buffer
             let previous = unsafe { Box::from_raw(self.head_of_queue as *mut BufferList<T>) };
 
+            // Store the next Buffer as the current Buffer
             self.head_of_queue = next_ptr;
 
+            // Drop and therefore free the previously current Buffer
             drop(previous);
         }
 
@@ -143,16 +155,33 @@ impl<T> Receiver<T> {
 
     /// Attempts to dequeue the next entry in the Queue
     pub fn dequeue(&mut self) -> Option<T> {
+        // Loads the current Buffer that should be used
         let mut current_queue = self.load_head_of_queue();
 
+        // Attempt to get the current Entry that we want to dequeue
         let mut n = match current_queue.buffer.get(current_queue.head) {
             Some(n) => n,
             None => {
+                // This path is hit, once we reached the end of the current
+                // Buffer in the previous dequeue operation but we did not
+                // have a next Buffer to load, meaning that we now try to load
+                // out of Bounds, meaning that we hit the None case when
+                // loading
+
+                // Attempt to move to the next Buffer again
                 self.move_to_next_buffer();
+                // Reload the current Buffer
                 current_queue = self.load_head_of_queue();
+
+                // Retry the loading of the Node, we use the `?` in this case,
+                // because if we dont find it again, there is nothing else we
+                // can really do and should simply return None as there was
+                // currently nothing to load
                 current_queue.buffer.get(current_queue.head)?
             }
         };
+
+        // Find the first node that is not set to Handled
         while n.get_state() == NodeState::Handled {
             current_queue.head += 1;
 
@@ -171,20 +200,31 @@ impl<T> Receiver<T> {
             };
         }
 
+        // Load the State of the current Node
         match n.get_state() {
+            // If it is Set that means that the Node has Data set and we can
+            // simply load the Data from it
             NodeState::Set => {
+                // Load the Data from the current Node
                 let data = n.load();
+                // Advance the Head of the current Buffer to the next Node
                 current_queue.head += 1;
 
+                // Move to the next Buffer if we need to
                 self.move_to_next_buffer();
+                // Return the loaded Data
                 Some(data)
             }
+            // If the found Node is set to empty, we should search the rest
+            // of the Buffers of the Queue to find if any other Node has been
+            // Set and if we find one return that
             NodeState::Empty => {
-                // TODO
-                // Somehow this introduces a couple of problems where Data is actually lost
+                // Load the current Head of the Queue
                 let tmp_head_of_queue = self.load_head_of_queue();
                 let tmp_head = tmp_head_of_queue.head;
 
+                // Look for the next Set Node
+                // This returns the Buffer and the Index in the Buffer
                 let (tmp_head_of_queue, tmp_head) = {
                     let (n_queue, result) = BufferList::scan(tmp_head_of_queue, tmp_head);
                     let n_head = match result {
@@ -194,9 +234,13 @@ impl<T> Receiver<T> {
                     (n_queue, n_head)
                 };
 
+                // Try to load the found Node
                 let tmp_n = tmp_head_of_queue.buffer.get(tmp_head)?;
 
+                // Actually load the Data from the Node
                 let data = tmp_n.load();
+                // Set the Node to being Handled to not accidentally load the
+                // same Node twice
                 tmp_n.handled();
 
                 Some(data)
