@@ -112,6 +112,7 @@ impl<T> Debug for Sender<T> {
 }
 
 impl<T> Receiver<T> {
+    /// Loads the current Head of the Buffer-List
     fn load_head_of_queue(&self) -> ManuallyDrop<Box<BufferList<T>>> {
         let ptr = self.head_of_queue;
         ManuallyDrop::new(unsafe { Box::from_raw(ptr as *mut BufferList<T>) })

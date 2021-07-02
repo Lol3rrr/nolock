@@ -1,4 +1,4 @@
-use std::{fmt::Debug, sync::atomic};
+use std::{cell::UnsafeCell, fmt::Debug, sync::atomic};
 
 /// The possible States of a Node
 #[derive(Debug, PartialEq)]
@@ -35,13 +35,20 @@ impl NodeState {
 /// A single Entry in the Queue
 pub struct Node<T> {
     /// The actual Datat itself that is stored in the Node
-    data: Option<T>,
+    data: UnsafeCell<Option<T>>,
     /// This holds one of three Values indicating the "State" of
     /// the Value
     is_set: atomic::AtomicU8,
 }
 
 impl<T> Node<T> {
+    pub fn new() -> Self {
+        Self {
+            data: UnsafeCell::new(None),
+            is_set: atomic::AtomicU8::new(NodeState::Empty.to_u8()),
+        }
+    }
+
     /// Atomically loads the current `is_set` State and decodes it
     /// as a NodeState enum
     pub fn get_state(&self) -> NodeState {
@@ -52,12 +59,19 @@ impl<T> Node<T> {
     /// Stores the given Data into the Node updating its Data-Field
     /// as well as its `is_set` State to `NodeState::Set`
     pub fn store(&self, data: T) {
-        unsafe {
-            let raw_data: &Option<T> = &self.data;
-            #[allow(mutable_transmutes)]
-            let mut_data: &mut Option<T> = std::mem::transmute(raw_data);
-            mut_data.replace(data);
-        }
+        // # Safety:
+        // This is safe because every Cell is only ever written to by a single
+        // Producer and will not be read by the Consumer until the State of the
+        // Node is changed to Set.
+        // This means that we have exclusive access to the current Data in the
+        // Node and therefore it is safe to mutate it directly without other
+        // forms of synchronization
+        let raw_ptr = self.data.get();
+        let mut_data = unsafe { &mut *raw_ptr };
+        mut_data.replace(data);
+
+        // Update the State of the Node to indicate to the Consumer that this
+        // node is now ready to be read/consumed
         self.is_set
             .store(NodeState::Set.to_u8(), atomic::Ordering::Release);
     }
@@ -65,9 +79,17 @@ impl<T> Node<T> {
     /// Attempts to load the Data from the Node itself, this can only be
     /// done once
     pub fn load(&self) -> T {
-        let data: &Option<T> = &self.data;
-        #[allow(mutable_transmutes)]
-        let mut_data: &mut Option<T> = unsafe { std::mem::transmute(data) };
+        // # Safety:
+        // This is save to do, because the value is only ever consumed by a
+        // single Consumer and after the value has been set, no more procuder
+        // will touch this entire Node again.
+        let raw_ptr = self.data.get();
+        let mut_data = unsafe { &mut *raw_ptr };
+        // We can safely unwrap this value as well, because this function
+        // is only ever called once and before it is called, the consumer will
+        // check that the Node is marked as Set. After this Node was visited it
+        // will never again be visited and therefore this wont be called again
+        // with a now empty data entry.
         mut_data.take().unwrap()
     }
 
@@ -80,10 +102,7 @@ impl<T> Node<T> {
 
 impl<T> Default for Node<T> {
     fn default() -> Self {
-        Self {
-            data: None,
-            is_set: atomic::AtomicU8::new(NodeState::Empty.to_u8()),
-        }
+        Self::new()
     }
 }
 
