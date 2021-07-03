@@ -87,7 +87,16 @@ pub struct BoundedReceiver<T> {
 /// if the End of the Buffer has been reached
 #[inline(always)]
 const fn next_element(current: usize, length: usize) -> usize {
-    (current + 1) % length
+    // This code is logically speaking identical to simply returning
+    // `(current + 1) % length`
+    // However after performing some benchmarks, this code seems to be
+    // significantly, in this context, faster than the simple naive variant
+    let target = current + 1;
+    if target >= length {
+        0
+    } else {
+        target
+    }
 }
 
 impl<T> BoundedSender<T> {
