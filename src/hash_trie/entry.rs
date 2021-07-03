@@ -53,12 +53,6 @@ impl<K, V> Entry<K, V> {
     }
 }
 
-#[must_use]
-#[derive(Debug)]
-pub enum InsertAction {
-    ReplaceCurrent,
-}
-
 impl<K, V> Entry<K, V>
 where
     K: Eq,

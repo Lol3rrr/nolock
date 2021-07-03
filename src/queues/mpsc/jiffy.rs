@@ -19,11 +19,16 @@ use bufferlist::BufferList;
 
 /// One of the Senders
 pub struct Sender<T> {
+    /// This is a shared Usize that Points to the Location in the overall
+    /// Buffer-List, where the next Item should be enqueued
     tail: Arc<atomic::AtomicUsize>,
+    /// This is a shared Pointer to the Last Buffer in the Buffer-List
     tail_of_queue: Arc<atomic::AtomicPtr<BufferList<T>>>,
 }
 /// The Single Receiver
 pub struct Receiver<T> {
+    /// This is a simply Ptr to the current Buffer from where items will be
+    /// dequeued
     head_of_queue: *const BufferList<T>,
 }
 

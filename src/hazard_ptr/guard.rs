@@ -87,6 +87,9 @@ impl<T> Guard<T> {
     }
 
     /// Converts the Guard into a Guard for a differnt underlying Type
+    ///
+    /// # Safety
+    /// You must make sure that the underlying Ptr is valid for the Type `O`
     pub unsafe fn convert<O>(self) -> Guard<O> {
         std::mem::transmute(self)
     }

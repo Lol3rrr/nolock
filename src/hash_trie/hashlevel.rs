@@ -266,7 +266,7 @@ where
         }
 
         match bucket.load::<B>(&mut bucket_guard) {
-            Some((sub_lvl, sub_lvl_ptr)) => {
+            Some((sub_lvl, _)) => {
                 let raw_new_entry = ManuallyDrop::into_inner(new_entry);
 
                 sub_lvl.insert_key_on_hash(
@@ -305,7 +305,7 @@ where
                 }),
                 _ => None,
             },
-            Some((sub_lvl, bucket_ptr)) => sub_lvl.get(hash, key),
+            Some((sub_lvl, _)) => sub_lvl.get(hash, key),
         }
     }
 
