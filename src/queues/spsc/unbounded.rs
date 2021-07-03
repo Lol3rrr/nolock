@@ -3,7 +3,7 @@
 //! # Reference:
 //! * [An Efficient Unbounded Lock-Free Queue - for Multi-core Systems](https://link.springer.com/content/pdf/10.1007%2F978-3-642-32820-6_65.pdf)
 
-pub mod d_spsc;
+mod d_spsc;
 
 use std::fmt::Debug;
 
@@ -15,25 +15,51 @@ use super::{bounded, DequeueError};
 
 /// The Sender-Half of an unbounded Queue
 pub struct UnboundedSender<T> {
+    /// The Size of each Buffer
     buffer_size: usize,
+    /// The current Buffer, where we insert entries
     buf_w: bounded::BoundedSender<T>,
+    /// This is used to inform the Consumer aboutu any new Buffers we allocate
+    /// in case the current one becomes full
     inuse_sender: d_spsc::UnboundedSender<bounded::BoundedReceiver<T>>,
 }
 
 impl<T> UnboundedSender<T> {
+    /// Creates a new BoundedQueue and sends the Receiving half of the new
+    /// BoundedQueue to the Consumer, using the `inuse_sender`.
     fn next_w(&mut self) -> bounded::BoundedSender<T> {
+        // Creates the new BoundedQueue with the configured BufferSize
         let (rx, tx) = bounded::bounded_queue(self.buffer_size);
+        // Sends the Receiving half of the newly created BoundedQueue to the
+        // Consumer half
         self.inuse_sender.enqueue(rx);
+        // Return the sending Half to the caller
         tx
     }
 
     /// Enqueues the Data
     pub fn enqueue(&mut self, data: T) {
-        if self.buf_w.is_full() {
+        // Attempt to enqueue the Data into the current BoundedQueue.
+        //
+        // NOTE:
+        // We first assume that the current BoundedQueue has still room as this
+        // will be the case most of the Time and therefore helps to reduce
+        // the time taken for the "fastest hot path" without impacting the
+        // alternative very much
+        //
+        // If this fails, we know that the BoundedQueue has to be full and
+        // therefore we start the process to create a new Buffer
+        if let Err((data, _)) = self.buf_w.try_enqueue(data) {
+            // Create new BoundedQueue and set it as the current BoundedQueue
+            // to use for any other writes/enqueues
             self.buf_w = self.next_w();
-        }
-        if self.buf_w.try_enqueue(data).is_err() {
-            panic!("The new Buffer should always have capacity for a new Element");
+            // Retry the Enqueue operation with the new BoundedQueue
+            //
+            // This should always succeed because we just now created the
+            // BoundedQueue meaning that is still empty
+            if self.buf_w.try_enqueue(data).is_err() {
+                panic!("The new Buffer is always empty");
+            }
         }
     }
 }
