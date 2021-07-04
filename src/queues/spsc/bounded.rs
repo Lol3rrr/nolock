@@ -1,5 +1,18 @@
 //! This implements a bounded lock-free Queue
 //!
+//! # Example
+//! ```
+//! use nolock::queues::spsc::bounded;
+//!
+//! // Creates a new BoundedQueue with the Capacity for 5 Items
+//! let (mut rx, mut tx) = bounded::queue(5);
+//!
+//! // Enqueues the Value 13 on the Queue
+//! tx.try_enqueue(13);
+//! // Dequeues 13 from the Queue again
+//! assert_eq!(Ok(13), rx.try_dequeue());
+//! ```
+//!
 //! # Reference:
 //! * [FastForward for Efficient Pipeline Parallelism - A Cache-Optimized Concurrent Lock-Free Queue](https://www.researchgate.net/publication/213894711_FastForward_for_Efficient_Pipeline_Parallelism_A_Cache-Optimized_Concurrent_Lock-Free_Queue)
 
@@ -125,6 +138,19 @@ impl<T> BoundedSender<T> {
         Ok(())
     }
 
+    /// A blocking enqueue Operation. This is obviously not lock-free anymore
+    /// and will simply spin while trying to enqueue the Data until it works
+    pub fn enqueue(&mut self, mut data: T) {
+        loop {
+            match self.try_enqueue(data) {
+                Ok(_) => return,
+                Err((d, _)) => {
+                    data = d;
+                }
+            };
+        }
+    }
+
     /// Checks if the current Queue is full
     pub fn is_full(&self) -> bool {
         // If the Node where we would insert the next Element is already set
@@ -139,6 +165,9 @@ impl<T> Debug for BoundedSender<T> {
         write!(f, "BoundedSender ()")
     }
 }
+
+unsafe impl<T> Send for BoundedSender<T> {}
+unsafe impl<T> Sync for BoundedSender<T> {}
 
 impl<T> BoundedReceiver<T> {
     /// Attempts to Dequeue the given piece of Data
@@ -163,6 +192,16 @@ impl<T> BoundedReceiver<T> {
         Ok(data)
     }
 
+    /// A blocking dequeue operations. This is not lock-free anymore and simply
+    /// spins while trying to dequeue until it works.
+    pub fn dequeue(&mut self) -> Option<T> {
+        loop {
+            if let Ok(d) = self.try_dequeue() {
+                return Some(d);
+            }
+        }
+    }
+
     /// Checks if the current queue is empty
     pub fn is_empty(&self) -> bool {
         // If the current Node where would dequeue the next Item from is not
@@ -178,8 +217,11 @@ impl<T> Debug for BoundedReceiver<T> {
     }
 }
 
+unsafe impl<T> Send for BoundedReceiver<T> {}
+unsafe impl<T> Sync for BoundedReceiver<T> {}
+
 /// Creates a new Bounded-Queue with the given Size
-pub fn bounded_queue<T>(size: usize) -> (BoundedReceiver<T>, BoundedSender<T>) {
+pub fn queue<T>(size: usize) -> (BoundedReceiver<T>, BoundedSender<T>) {
     // Create the underlying Buffer of Nodes and fill it up with empty Nodes
     // as the initial Configuration
     let mut raw_buffer = Vec::with_capacity(size);
@@ -204,28 +246,28 @@ mod tests {
 
     #[test]
     fn enqueue_dequeue() {
-        let (mut rx, mut tx) = bounded_queue(10);
+        let (mut rx, mut tx) = queue(10);
 
         assert_eq!(Ok(()), tx.try_enqueue(13));
         assert_eq!(Ok(13), rx.try_dequeue());
     }
     #[test]
     fn enqueue_will_block() {
-        let (_, mut tx) = bounded_queue(1);
+        let (_, mut tx) = queue(1);
 
         assert_eq!(Ok(()), tx.try_enqueue(13));
         assert_eq!(Err((14, EnqueueError::WouldBlock)), tx.try_enqueue(14));
     }
     #[test]
     fn dequeue_will_block() {
-        let (mut rx, _) = bounded_queue::<usize>(1);
+        let (mut rx, _) = queue::<usize>(1);
 
         assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
     }
 
     #[test]
     fn enqueue_dequeue_full_buffer() {
-        let (mut rx, mut tx) = bounded_queue(3);
+        let (mut rx, mut tx) = queue(3);
 
         for i in 0..4 {
             assert_eq!(Ok(()), tx.try_enqueue(i));

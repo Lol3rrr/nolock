@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::mem::ManuallyDrop;
 
 use std::ops::Deref;
-use std::sync::atomic;
+use std::sync::{atomic, Arc};
 
 use crate::queues::mpsc::jiffy;
 
@@ -17,7 +17,7 @@ pub struct Guard<T> {
     pub(crate) record: *mut Record<()>,
     /// The Queue-Sender on which to return the Hazard-Record once the Guard
     /// is dropped to have a simpler schema for reusing Hazard-Pointers locally
-    pub(crate) record_returner: jiffy::Sender<*mut Record<()>>,
+    pub(crate) record_returner: Arc<jiffy::Sender<*mut Record<()>>>,
 }
 
 impl<T> Debug for Guard<T> {

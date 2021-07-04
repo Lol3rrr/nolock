@@ -6,7 +6,7 @@ pub fn jiffy_enqueue_dequeue(ctx: &mut Criterion) {
 
         b.iter(|| {
             tx.enqueue(black_box(13));
-            assert_eq!(Some(13), rx.dequeue());
+            assert_eq!(Some(13), rx.try_dequeue());
         });
     });
 }

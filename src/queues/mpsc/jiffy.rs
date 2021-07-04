@@ -1,14 +1,25 @@
-//! The implemenation of a Lock-Free, possibly Wait-Free, MPSC Queue
+//! The implemenation of a Lock-Free, possibly Wait-Free, unbounded MPSC Queue
+//!
+//! # Examples:
+//! ```rust
+//! use nolock::queues::mpsc::jiffy;
+//!
+//! // Create a new Queue
+//! let (mut rx, tx) = jiffy::queue();
+//!
+//! // Enqueue some Data
+//! tx.enqueue(13);
+//!
+//! // Dequeue the Data again
+//! assert_eq!(Some(13), rx.try_dequeue());
+//! ```
 //!
 //! # Reference:
 //! * [Jiffy: A Fast, Memory Efficient, Wait-Free Multi-Producers Single-Consumer Queue](https://arxiv.org/pdf/2010.14189.pdf)
 
-use std::{
-    fmt::Debug,
-    mem::ManuallyDrop,
-    sync::{atomic, Arc},
-};
+use std::{fmt::Debug, mem::ManuallyDrop, sync::atomic};
 
+/// The Size of each Buffer in the "BufferList"
 const BUFFER_SIZE: usize = 256;
 
 mod node;
@@ -17,15 +28,21 @@ use node::NodeState;
 mod bufferlist;
 use bufferlist::BufferList;
 
-/// One of the Senders
+#[cfg(feature = "async")]
+mod async_queue;
+#[cfg(feature = "async")]
+pub use async_queue::*;
+
+/// One of the Sender, created by calling [`queue`]
 pub struct Sender<T> {
     /// This is a shared Usize that Points to the Location in the overall
     /// Buffer-List, where the next Item should be enqueued
-    tail: Arc<atomic::AtomicUsize>,
+    tail: atomic::AtomicUsize,
     /// This is a shared Pointer to the Last Buffer in the Buffer-List
-    tail_of_queue: Arc<atomic::AtomicPtr<BufferList<T>>>,
+    tail_of_queue: atomic::AtomicPtr<BufferList<T>>,
 }
-/// The Single Receiver
+
+/// The Single Receiver of a Jiffy-Queue, created by calling [`queue`]
 pub struct Receiver<T> {
     /// This is a simply Ptr to the current Buffer from where items will be
     /// dequeued
@@ -101,15 +118,6 @@ impl<T> Sender<T> {
     }
 }
 
-impl<T> Clone for Sender<T> {
-    fn clone(&self) -> Self {
-        Self {
-            tail: self.tail.clone(),
-            tail_of_queue: self.tail_of_queue.clone(),
-        }
-    }
-}
-
 impl<T> Debug for Sender<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Sender ()")
@@ -159,7 +167,7 @@ impl<T> Receiver<T> {
     }
 
     /// Attempts to dequeue the next entry in the Queue
-    pub fn dequeue(&mut self) -> Option<T> {
+    pub fn try_dequeue(&mut self) -> Option<T> {
         // Loads the current Buffer that should be used
         let mut current_queue = self.load_head_of_queue();
 
@@ -276,9 +284,23 @@ impl<T> Receiver<T> {
             _ => None,
         }
     }
+
+    /// This is a simple blocking dequeue. This is definetly not lock free
+    /// anymore and will simply spin and try to dequeue an item over and over
+    /// again.
+    pub fn dequeue(&mut self) -> Option<T> {
+        loop {
+            if let Some(data) = self.try_dequeue() {
+                return Some(data);
+            }
+        }
+    }
 }
 
+// These are both save to manually implement because we would garantuee that
+// they are save to share across threads, because the algorithm garantuees it
 unsafe impl<T> Send for Receiver<T> {}
+unsafe impl<T> Sync for Receiver<T> {}
 
 impl<T> Debug for Receiver<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -286,13 +308,13 @@ impl<T> Debug for Receiver<T> {
     }
 }
 
-/// Creates a new empty Queue
+/// Creates a new empty Queue and returns their ([`Receiver`], [`Sender`])
 pub fn queue<T>() -> (Receiver<T>, Sender<T>) {
     let initial_buffer = BufferList::boxed(std::ptr::null(), 1);
     let initial_ptr = Box::into_raw(initial_buffer);
 
-    let tail = Arc::new(atomic::AtomicUsize::new(0));
-    let tail_of_queue = Arc::new(atomic::AtomicPtr::new(initial_ptr));
+    let tail = atomic::AtomicUsize::new(0);
+    let tail_of_queue = atomic::AtomicPtr::new(initial_ptr);
 
     (
         Receiver {
@@ -313,7 +335,7 @@ mod tests {
     fn dequeue_empty() {
         let (mut rx, _) = queue::<u8>();
 
-        assert_eq!(None, rx.dequeue());
+        assert_eq!(None, rx.try_dequeue());
     }
 
     #[test]
@@ -328,7 +350,7 @@ mod tests {
         let (mut rx, tx) = queue();
 
         tx.enqueue(13);
-        assert_eq!(Some(13), rx.dequeue());
+        assert_eq!(Some(13), rx.try_dequeue());
     }
 
     #[test]
@@ -340,24 +362,24 @@ mod tests {
             tx.enqueue(i);
         }
         for i in 0..elements {
-            assert_eq!(Some(i), rx.dequeue());
+            assert_eq!(Some(i), rx.try_dequeue());
         }
     }
 
     #[test]
     fn fill_mulitple_buffers() {
-        let (mut rx, mut tx) = queue();
+        let (mut rx, tx) = queue();
 
         let elements = BUFFER_SIZE * 5;
         for i in 0..elements {
             tx.enqueue(i);
         }
         for i in 0..elements {
-            assert_eq!(Some(i), rx.dequeue());
+            assert_eq!(Some(i), rx.try_dequeue());
         }
 
         // make sure it still works after this
         tx.enqueue(13);
-        assert_eq!(Some(13), rx.dequeue());
+        assert_eq!(Some(13), rx.try_dequeue());
     }
 }

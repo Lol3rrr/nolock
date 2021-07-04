@@ -1,5 +1,18 @@
 //! An unbounded lock-free Queue
 //!
+//! # Example
+//! ```
+//! use nolock::queues::spsc::unbounded;
+//!
+//! // Create a new UnboundedQueue
+//! let (mut rx, mut tx) = unbounded::queue();
+//!
+//! // Enqueue 13
+//! tx.enqueue(13);
+//! // Dequeue the 13 again
+//! assert_eq!(Ok(13), rx.try_dequeue());
+//! ```
+//!
 //! # Reference:
 //! * [An Efficient Unbounded Lock-Free Queue - for Multi-core Systems](https://link.springer.com/content/pdf/10.1007%2F978-3-642-32820-6_65.pdf)
 
@@ -29,7 +42,7 @@ impl<T> UnboundedSender<T> {
     /// BoundedQueue to the Consumer, using the `inuse_sender`.
     fn next_w(&mut self) -> bounded::BoundedSender<T> {
         // Creates the new BoundedQueue with the configured BufferSize
-        let (rx, tx) = bounded::bounded_queue(self.buffer_size);
+        let (rx, tx) = bounded::queue(self.buffer_size);
         // Sends the Receiving half of the newly created BoundedQueue to the
         // Consumer half
         self.inuse_sender.enqueue(rx);
@@ -70,35 +83,61 @@ impl<T> Debug for UnboundedSender<T> {
     }
 }
 
+unsafe impl<T> Send for UnboundedSender<T> {}
+unsafe impl<T> Sync for UnboundedSender<T> {}
+
 /// The Receiver-Half of an unbounded Queue
 pub struct UnboundedReceiver<T> {
+    /// The current BoundedQueue from which items are being Dequeued
     buf_r: bounded::BoundedReceiver<T>,
+    /// This is used to receive information about any new BoundedQueues created
+    /// by the sending Half of this Queue
     inuse_recv: d_spsc::UnboundedReceiver<bounded::BoundedReceiver<T>>,
 }
 
 impl<T> UnboundedReceiver<T> {
-    fn next_r(&mut self) -> Option<bounded::BoundedReceiver<T>> {
-        match self.inuse_recv.try_dequeue() {
-            Ok(b) => Some(b),
-            Err(_) => None,
+    /// Attempts to dequeue a single Element from the Queue
+    pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
+        // Attempt to Dequeue an element from the current BoundedQueue
+        match self.buf_r.try_dequeue() {
+            // If we dequeued an Item, simply return that and we are done
+            Ok(d) => Ok(d),
+            // If we failed to dequeue an item, there are two possible
+            // situations:
+            // * The currently used BoundedQueue is empty and the producer has
+            //   moved on to a new BoundedQueue for all further elements
+            // * The entire Queue is simply empty
+            //
+            // To resolve this we attempt to dequeue a new BoundedQueue, which
+            // should only work if the Producer has moved on
+            Err(_) => match self.inuse_recv.try_dequeue() {
+                // The Producer moved on from the previous Buffer and will
+                // continue inserting Items into this new BoundedQueue until
+                // this one is eventually full as well
+                Ok(n_queue) => {
+                    // Replace the currently held BoundedQueue with the newly
+                    // received One
+                    self.buf_r = n_queue;
+                    // Attempt to dequeue from this new BoundedQueue and then
+                    self.buf_r.try_dequeue()
+                }
+                // There is no other Queue that the Producer moved on to,
+                // meaning that the entire Queue is simply empty so we should
+                // return the right Error and exit
+                Err(_) => Err(DequeueError::WouldBlock),
+            },
         }
     }
 
-    /// Attempts to dequeue a single Element from the Queue
-    pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
-        if self.buf_r.is_empty() {
-            if self.inuse_recv.is_empty() {
-                return Err(DequeueError::WouldBlock);
-            }
-            if self.buf_r.is_empty() {
-                self.buf_r = match self.next_r() {
-                    Some(b) => b,
-                    None => return Err(DequeueError::WouldBlock),
-                };
+    /// A simple blocking dequeue operation. This is not lock-free anymore
+    /// (obviously) and simply spins while trying to dequeue an element from
+    /// the Queue until it succeeds
+    pub fn dequeue(&mut self) -> Option<T> {
+        loop {
+            if let Ok(data) = self.try_dequeue() {
+                return Some(data);
             }
         }
-
-        self.buf_r.try_dequeue()
     }
 }
 
@@ -108,10 +147,15 @@ impl<T> Debug for UnboundedReceiver<T> {
     }
 }
 
+unsafe impl<T> Send for UnboundedReceiver<T> {}
+unsafe impl<T> Sync for UnboundedReceiver<T> {}
+
 /// Creates a new Queue
-pub fn unbounded_queue<T>(buffer_size: usize) -> (UnboundedReceiver<T>, UnboundedSender<T>) {
+pub fn queue<T>() -> (UnboundedReceiver<T>, UnboundedSender<T>) {
+    let buffer_size = 64;
+
     let (inuse_rx, inuse_tx) = d_spsc::unbounded_basic_queue();
-    let (initial_rx, initial_tx) = bounded::bounded_queue(buffer_size);
+    let (initial_rx, initial_tx) = bounded::queue(buffer_size);
 
     (
         UnboundedReceiver {
@@ -132,7 +176,7 @@ mod tests {
 
     #[test]
     fn enqueue_dequeue() {
-        let (mut rx, mut tx) = unbounded_queue(10);
+        let (mut rx, mut tx) = queue();
 
         tx.enqueue(13);
         assert_eq!(Ok(13), rx.try_dequeue());
@@ -140,7 +184,7 @@ mod tests {
 
     #[test]
     fn multi_buffer() {
-        let (mut rx, mut tx) = unbounded_queue(1);
+        let (mut rx, mut tx) = queue();
 
         tx.enqueue(13);
         tx.enqueue(14);

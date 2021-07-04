@@ -1,7 +1,10 @@
 mod global;
 
 pub use global::DomainGlobal;
-use std::{fmt::Debug, sync::atomic};
+use std::{
+    fmt::Debug,
+    sync::{atomic, Arc},
+};
 
 use crate::queues::mpsc::jiffy;
 
@@ -12,7 +15,7 @@ pub struct Domain {
     /// The Refernce to the Shared-Global State for the Hazard-Pointer-Domain
     global: &'static DomainGlobal,
 
-    record_sender: jiffy::Sender<*mut Record<()>>,
+    record_sender: Arc<jiffy::Sender<*mut Record<()>>>,
     record_receiver: jiffy::Receiver<*mut Record<()>>,
 
     /// The Threshold at which it should try to reclaim all Memory marked
@@ -47,7 +50,7 @@ impl Domain {
         Self {
             r_threshold: reclaim_threshold,
             global,
-            record_sender: tx,
+            record_sender: Arc::new(tx),
             record_receiver: rx,
             r_list: Vec::new(),
         }
@@ -114,7 +117,7 @@ impl Domain {
     /// anything and should not be used to try and access the Data inside it,
     /// which would cause a Null-Ptr dereference
     pub fn empty_guard<T>(&mut self) -> Guard<T> {
-        let record_ptr = match self.record_receiver.dequeue() {
+        let record_ptr = match self.record_receiver.try_dequeue() {
             Some(r) => r,
             None => self.generate_new_record(),
         };
@@ -134,7 +137,7 @@ impl Domain {
         atom_ptr: &atomic::AtomicPtr<T>,
         load_order: atomic::Ordering,
     ) -> Guard<T> {
-        let record_ptr = match self.record_receiver.dequeue() {
+        let record_ptr = match self.record_receiver.try_dequeue() {
             Some(r) => r,
             None => self.generate_new_record(),
         };

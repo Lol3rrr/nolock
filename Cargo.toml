@@ -10,13 +10,16 @@ default = ["full"]
 queues = []
 hazard_ptr = ["queues"]
 hash_trie = ["hazard_ptr"]
-full = ["queues", "hazard_ptr", "hash_trie"]
+async = ["futures"]
+full = ["queues", "hazard_ptr", "hash_trie", "async"]
 
 [dependencies]
+futures = { version = "0.3", optional = true, default_features = false }
 
 [dev-dependencies]
 rand = { version = "0.8" }
 criterion = { version = "0.3" }
+tokio = { version = "1.8", features = ["rt", "macros", "test-util"] }
 
 [[bench]]
 name = "benchmarks"
