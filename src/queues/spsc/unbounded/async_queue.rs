@@ -2,7 +2,7 @@ use std::{fmt::Debug, future::Future, sync::Arc, task::Poll};
 
 use futures::task::AtomicWaker;
 
-use crate::queues::spsc::DequeueError;
+use crate::queues::spsc::{DequeueError, EnqueueError};
 
 use super::{queue, UnboundedReceiver, UnboundedSender};
 
@@ -31,9 +31,10 @@ pub struct DequeueFuture<'queue, T> {
 
 impl<T> AsyncUnboundedSender<T> {
     /// Enqueues the given Data on the Queue
-    pub fn enqueue(&mut self, data: T) {
-        self.queue.enqueue(data);
+    pub fn enqueue(&mut self, data: T) -> Result<(), (T, EnqueueError)> {
+        self.queue.enqueue(data)?;
         self.rx_waker.wake();
+        Ok(())
     }
 }
 
@@ -76,10 +77,13 @@ impl<'queue, T> Future for DequeueFuture<'queue, T> {
     ) -> std::task::Poll<Self::Output> {
         match self.queue.try_dequeue() {
             Ok(d) => Poll::Ready(Ok(d)),
-            Err(_) => {
-                self.rx_waker.register(cx.waker());
-                Poll::Pending
-            }
+            Err(e) => match e {
+                DequeueError::WouldBlock => {
+                    self.rx_waker.register(cx.waker());
+                    Poll::Pending
+                }
+                DequeueError::Closed => Poll::Ready(Err(DequeueError::Closed)),
+            },
         }
     }
 }
@@ -117,7 +121,7 @@ mod tests {
     async fn enqueue_dequeue() {
         let (mut rx, mut tx) = async_queue();
 
-        tx.enqueue(13);
+        tx.enqueue(13).unwrap();
         assert_eq!(Ok(13), rx.dequeue().await);
     }
 }

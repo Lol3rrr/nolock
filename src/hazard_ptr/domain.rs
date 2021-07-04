@@ -118,8 +118,8 @@ impl Domain {
     /// which would cause a Null-Ptr dereference
     pub fn empty_guard<T>(&mut self) -> Guard<T> {
         let record_ptr = match self.record_receiver.try_dequeue() {
-            Some(r) => r,
-            None => self.generate_new_record(),
+            Ok(r) => r,
+            _ => self.generate_new_record(),
         };
 
         Guard {
@@ -138,8 +138,8 @@ impl Domain {
         load_order: atomic::Ordering,
     ) -> Guard<T> {
         let record_ptr = match self.record_receiver.try_dequeue() {
-            Some(r) => r,
-            None => self.generate_new_record(),
+            Ok(r) => r,
+            _ => self.generate_new_record(),
         };
 
         let mut guard: Guard<T> = Guard {

@@ -5,8 +5,8 @@ pub fn jiffy_enqueue_dequeue(ctx: &mut Criterion) {
         let (mut rx, tx) = nolock::queues::mpsc::jiffy::queue::<u64>();
 
         b.iter(|| {
-            tx.enqueue(black_box(13));
-            assert_eq!(Some(13), rx.try_dequeue());
+            let _ = tx.enqueue(black_box(13));
+            assert_eq!(Ok(13), rx.try_dequeue());
         });
     });
 }
@@ -16,7 +16,7 @@ pub fn std_enqueue_dequeue(ctx: &mut Criterion) {
         let (tx, rx) = std::sync::mpsc::channel::<u64>();
 
         b.iter(|| {
-            tx.send(black_box(13));
+            let _ = tx.send(black_box(13));
             assert_eq!(Ok(13), rx.try_recv());
         });
     });

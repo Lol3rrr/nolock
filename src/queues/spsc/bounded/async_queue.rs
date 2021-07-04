@@ -109,7 +109,7 @@ impl<T> Debug for AsyncBoundedReceiver<T> {
 impl<'queue, T> Unpin for EnqueueFuture<'queue, T> {}
 
 impl<'queue, T> Future for EnqueueFuture<'queue, T> {
-    type Output = ();
+    type Output = Result<(), (T, EnqueueError)>;
 
     fn poll(
         mut self: std::pin::Pin<&mut Self>,
@@ -117,20 +117,23 @@ impl<'queue, T> Future for EnqueueFuture<'queue, T> {
     ) -> std::task::Poll<Self::Output> {
         let data = match self.data.take() {
             Some(d) => d,
-            None => return Poll::Ready(()),
+            None => return Poll::Ready(Ok(())),
         };
 
         match self.queue.try_enqueue(data) {
             Ok(_) => {
                 self.rx_waker.wake();
-                Poll::Ready(())
+                Poll::Ready(Ok(()))
             }
-            Err((d, _)) => {
-                self.data.replace(d);
-                self.tx_waker.register(cx.waker());
+            Err((d, e)) => match e {
+                EnqueueError::WouldBlock => {
+                    self.data.replace(d);
+                    self.tx_waker.register(cx.waker());
 
-                Poll::Pending
-            }
+                    Poll::Pending
+                }
+                EnqueueError::Closed => Poll::Ready(Err((d, e))),
+            },
         }
     }
 }
@@ -155,10 +158,13 @@ impl<'queue, T> Future for DequeueFuture<'queue, T> {
                 self.tx_waker.wake();
                 Poll::Ready(Ok(d))
             }
-            Err(_) => {
-                self.rx_waker.register(cx.waker());
-                Poll::Pending
-            }
+            Err(e) => match e {
+                DequeueError::WouldBlock => {
+                    self.rx_waker.register(cx.waker());
+                    Poll::Pending
+                }
+                DequeueError::Closed => Poll::Ready(Err(DequeueError::Closed)),
+            },
         }
     }
 }
@@ -199,7 +205,7 @@ mod tests {
     async fn enqueue_dequeue() {
         let (mut rx, mut tx) = async_queue::<usize>(10);
 
-        tx.enqueue(13).await;
+        tx.enqueue(13).await.unwrap();
         assert_eq!(Ok(13), rx.dequeue().await);
     }
 }

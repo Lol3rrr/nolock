@@ -11,13 +11,17 @@
 //! tx.enqueue(13);
 //!
 //! // Dequeue the Data again
-//! assert_eq!(Some(13), rx.try_dequeue());
+//! assert_eq!(Ok(13), rx.try_dequeue());
 //! ```
 //!
 //! # Reference:
 //! * [Jiffy: A Fast, Memory Efficient, Wait-Free Multi-Producers Single-Consumer Queue](https://arxiv.org/pdf/2010.14189.pdf)
 
-use std::{fmt::Debug, mem::ManuallyDrop, sync::atomic};
+use std::{
+    fmt::Debug,
+    mem::ManuallyDrop,
+    sync::{atomic, Arc},
+};
 
 /// The Size of each Buffer in the "BufferList"
 const BUFFER_SIZE: usize = 256;
@@ -33,8 +37,12 @@ mod async_queue;
 #[cfg(feature = "async")]
 pub use async_queue::*;
 
+use super::{DequeueError, EnqueueError};
+
 /// One of the Sender, created by calling [`queue`]
 pub struct Sender<T> {
+    /// Indicates if the Queue has been closed
+    closed: Arc<atomic::AtomicBool>,
     /// This is a shared Usize that Points to the Location in the overall
     /// Buffer-List, where the next Item should be enqueued
     tail: atomic::AtomicUsize,
@@ -44,14 +52,25 @@ pub struct Sender<T> {
 
 /// The Single Receiver of a Jiffy-Queue, created by calling [`queue`]
 pub struct Receiver<T> {
+    /// Indicates if the Queue has been closed
+    closed: Arc<atomic::AtomicBool>,
     /// This is a simply Ptr to the current Buffer from where items will be
     /// dequeued
     head_of_queue: *const BufferList<T>,
 }
 
 impl<T> Sender<T> {
+    /// Checks if the Queue has been closed by either Side
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(atomic::Ordering::Acquire)
+    }
+
     /// Enqueues the given piece of Data
-    pub fn enqueue(&self, data: T) {
+    pub fn enqueue(&self, data: T) -> Result<(), (T, EnqueueError)> {
+        if self.is_closed() {
+            return Err((data, EnqueueError::Closed));
+        }
+
         // Load our target absolute position, on where to insert the next
         // Element
         //
@@ -115,6 +134,7 @@ impl<T> Sender<T> {
 
         // TODO
         // Possible optimization regarding to pre-allocate the next buffer early
+        Ok(())
     }
 }
 
@@ -124,7 +144,18 @@ impl<T> Debug for Sender<T> {
     }
 }
 
+impl<T> Drop for Sender<T> {
+    fn drop(&mut self) {
+        self.closed.store(true, atomic::Ordering::Release);
+    }
+}
+
 impl<T> Receiver<T> {
+    /// Checks if the Queue has been closed by either Side
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(atomic::Ordering::Acquire)
+    }
+
     /// Loads the current Head of the Buffer-List
     fn load_head_of_queue(&self) -> ManuallyDrop<Box<BufferList<T>>> {
         let ptr = self.head_of_queue;
@@ -167,7 +198,7 @@ impl<T> Receiver<T> {
     }
 
     /// Attempts to dequeue the next entry in the Queue
-    pub fn try_dequeue(&mut self) -> Option<T> {
+    pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
         // Loads the current Buffer that should be used
         let mut current_queue = self.load_head_of_queue();
 
@@ -190,7 +221,10 @@ impl<T> Receiver<T> {
                 // because if we dont find it again, there is nothing else we
                 // can really do and should simply return None as there was
                 // currently nothing to load
-                current_queue.buffer.get(current_queue.head)?
+                match current_queue.buffer.get(current_queue.head) {
+                    Some(n) => n,
+                    None => return Err(DequeueError::WouldBlock),
+                }
             }
         };
 
@@ -199,7 +233,7 @@ impl<T> Receiver<T> {
             current_queue.head += 1;
 
             if !self.move_to_next_buffer() {
-                return None;
+                return Err(DequeueError::WouldBlock);
             }
 
             current_queue = self.load_head_of_queue();
@@ -208,7 +242,10 @@ impl<T> Receiver<T> {
                 None => {
                     self.move_to_next_buffer();
                     current_queue = self.load_head_of_queue();
-                    current_queue.buffer.get(current_queue.head)?
+                    match current_queue.buffer.get(current_queue.head) {
+                        Some(t) => t,
+                        None => return Err(DequeueError::WouldBlock),
+                    }
                 }
             };
         }
@@ -226,7 +263,7 @@ impl<T> Receiver<T> {
                 // Move to the next Buffer if we need to
                 self.move_to_next_buffer();
                 // Return the loaded Data
-                Some(data)
+                Ok(data)
             }
             // If the found Node is set to empty, we should search the rest
             // of the Buffers of the Queue to find if any other Node has been
@@ -239,16 +276,51 @@ impl<T> Receiver<T> {
                 // Look for the next Set Node
                 // This returns the Buffer and the Index in the Buffer
                 let (tmp_head_of_queue, tmp_head) = {
-                    let (n_queue, result) = BufferList::scan(tmp_head_of_queue, tmp_head);
+                    let (mut n_queue, result) = BufferList::scan(tmp_head_of_queue, tmp_head);
                     let n_head = match result {
                         Some(n) => n,
-                        None => return None,
+                        // We could not find a Set Node in this pass
+                        None => {
+                            // Check if the Queue has been marked as closed
+                            if self.is_closed() {
+                                // If the Queue has been closed, then there are
+                                // no more Insertions happending and all
+                                // previous ones should have completed.
+                                //
+                                // We then once again search for a Set-Node to
+                                // make sure we don't forget to dequeue any
+                                // Node
+                                let tmp_head_of_queue = self.load_head_of_queue();
+                                let (t_queue, t_result) =
+                                    BufferList::scan(tmp_head_of_queue, tmp_head);
+                                match t_result {
+                                    // We still Found a Set-Node, so we will
+                                    // simply continue as if the Queue has
+                                    // not been closed yet
+                                    Some(n) => {
+                                        n_queue = t_queue;
+                                        n
+                                    }
+                                    // We could not find any outstanding Nodes
+                                    // in the Buffer and therefore conclude
+                                    // that the Buffer is empty and we can
+                                    // savely claim that the Buffer has been
+                                    // closed and can be discarded
+                                    None => return Err(DequeueError::Closed),
+                                }
+                            } else {
+                                return Err(DequeueError::WouldBlock);
+                            }
+                        }
                     };
                     (n_queue, n_head)
                 };
 
                 // Try to load the found Node
-                let tmp_n = tmp_head_of_queue.buffer.get(tmp_head)?;
+                let tmp_n = match tmp_head_of_queue.buffer.get(tmp_head) {
+                    Some(n) => n,
+                    None => return Err(DequeueError::WouldBlock),
+                };
 
                 // Actually load the Data from the Node
                 let data = tmp_n.load();
@@ -256,7 +328,7 @@ impl<T> Receiver<T> {
                 // same Node twice
                 tmp_n.handled();
 
-                Some(data)
+                Ok(data)
 
                 /*
                 let mut head_of_queue = self.load_head_of_queue();
@@ -281,7 +353,7 @@ impl<T> Receiver<T> {
                 Some(data)
                 */
             }
-            _ => None,
+            _ => Err(DequeueError::WouldBlock),
         }
     }
 
@@ -290,9 +362,13 @@ impl<T> Receiver<T> {
     /// again.
     pub fn dequeue(&mut self) -> Option<T> {
         loop {
-            if let Some(data) = self.try_dequeue() {
-                return Some(data);
-            }
+            match self.try_dequeue() {
+                Ok(d) => return Some(d),
+                Err(e) => match e {
+                    DequeueError::WouldBlock => {}
+                    DequeueError::Closed => return None,
+                },
+            };
         }
     }
 }
@@ -308,6 +384,12 @@ impl<T> Debug for Receiver<T> {
     }
 }
 
+impl<T> Drop for Receiver<T> {
+    fn drop(&mut self) {
+        self.closed.store(true, atomic::Ordering::Release);
+    }
+}
+
 /// Creates a new empty Queue and returns their ([`Receiver`], [`Sender`])
 pub fn queue<T>() -> (Receiver<T>, Sender<T>) {
     let initial_buffer = BufferList::boxed(std::ptr::null(), 1);
@@ -316,11 +398,15 @@ pub fn queue<T>() -> (Receiver<T>, Sender<T>) {
     let tail = atomic::AtomicUsize::new(0);
     let tail_of_queue = atomic::AtomicPtr::new(initial_ptr);
 
+    let closed = Arc::new(atomic::AtomicBool::new(false));
+
     (
         Receiver {
+            closed: closed.clone(),
             head_of_queue: initial_ptr as *const BufferList<T>,
         },
         Sender {
+            closed,
             tail,
             tail_of_queue,
         },
@@ -333,24 +419,26 @@ mod tests {
 
     #[test]
     fn dequeue_empty() {
-        let (mut rx, _) = queue::<u8>();
+        let (mut rx, tx) = queue::<u8>();
 
-        assert_eq!(None, rx.try_dequeue());
+        assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
+        drop(tx);
     }
 
     #[test]
     fn enqueue_one() {
-        let (_, tx) = queue();
+        let (rx, tx) = queue();
 
-        tx.enqueue(13);
+        tx.enqueue(13).unwrap();
+        drop(rx);
     }
 
     #[test]
     fn enqueue_dequeue() {
         let (mut rx, tx) = queue();
 
-        tx.enqueue(13);
-        assert_eq!(Some(13), rx.try_dequeue());
+        tx.enqueue(13).unwrap();
+        assert_eq!(Ok(13), rx.try_dequeue());
     }
 
     #[test]
@@ -359,10 +447,10 @@ mod tests {
 
         let elements = BUFFER_SIZE + 2;
         for i in 0..elements {
-            tx.enqueue(i);
+            tx.enqueue(i).unwrap();
         }
         for i in 0..elements {
-            assert_eq!(Some(i), rx.try_dequeue());
+            assert_eq!(Ok(i), rx.try_dequeue());
         }
     }
 
@@ -372,14 +460,40 @@ mod tests {
 
         let elements = BUFFER_SIZE * 5;
         for i in 0..elements {
-            tx.enqueue(i);
+            tx.enqueue(i).unwrap();
         }
         for i in 0..elements {
-            assert_eq!(Some(i), rx.try_dequeue());
+            assert_eq!(Ok(i), rx.try_dequeue());
         }
 
         // make sure it still works after this
-        tx.enqueue(13);
-        assert_eq!(Some(13), rx.try_dequeue());
+        tx.enqueue(13).unwrap();
+        assert_eq!(Ok(13), rx.try_dequeue());
+    }
+
+    #[test]
+    fn enqueue_closed() {
+        let (rx, tx) = queue();
+        drop(rx);
+
+        assert_eq!(Err((13, EnqueueError::Closed)), tx.enqueue(13));
+    }
+
+    #[test]
+    fn dequeue_closed() {
+        let (mut rx, tx) = queue::<usize>();
+        drop(tx);
+
+        assert_eq!(Err(DequeueError::Closed), rx.try_dequeue());
+    }
+    #[test]
+    fn enqueue_dequeue_closed() {
+        let (mut rx, tx) = queue::<usize>();
+
+        tx.enqueue(13).unwrap();
+        drop(tx);
+
+        assert_eq!(Ok(13), rx.try_dequeue());
+        assert_eq!(Err(DequeueError::Closed), rx.try_dequeue());
     }
 }

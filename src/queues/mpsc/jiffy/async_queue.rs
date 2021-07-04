@@ -1,6 +1,8 @@
 use futures::task::AtomicWaker;
 use std::{fmt::Debug, future::Future, sync::Arc, task::Poll};
 
+use crate::queues::mpsc::{DequeueError, EnqueueError};
+
 use super::{queue, Receiver, Sender};
 
 /// This is simply the asynchronous Version of the [`Jiffy-Receiver`](Receiver)
@@ -25,7 +27,7 @@ impl<T> AsyncReceiver<T> {
     ///
     /// This is the same as [`try_dequeue`](Receiver::try_dequeue) on the
     /// normal Jiffy-Queue
-    pub fn try_dequeue(&mut self) -> Option<T> {
+    pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
         // Simply attempt to dequeue the first Item
         self.queue.try_dequeue()
     }
@@ -58,7 +60,7 @@ pub struct DequeueFuture<'queue, T> {
 }
 
 impl<'queue, T> Future for DequeueFuture<'queue, T> {
-    type Output = Option<T>;
+    type Output = Result<T, DequeueError>;
 
     fn poll(
         mut self: std::pin::Pin<&mut Self>,
@@ -67,16 +69,19 @@ impl<'queue, T> Future for DequeueFuture<'queue, T> {
         // Attempt to Dequeue an Item
         match self.queue.try_dequeue() {
             // If it worked, simply return Ready with the Data as the Result
-            Some(d) => Poll::Ready(Some(d)),
+            Ok(d) => Poll::Ready(Ok(d)),
             // If it did not work, update the Waker and return Pending
-            None => {
-                // Update the shared Waker with the right Waker for the current
-                // Task
-                self.waker.register(cx.waker());
+            Err(e) => match e {
+                DequeueError::WouldBlock => {
+                    // Update the shared Waker with the right Waker for the current
+                    // Task
+                    self.waker.register(cx.waker());
 
-                // Indicate the we are still waiting for data
-                Poll::Pending
-            }
+                    // Indicate the we are still waiting for data
+                    Poll::Pending
+                }
+                DequeueError::Closed => Poll::Ready(Err(DequeueError::Closed)),
+            },
         }
     }
 }
@@ -89,12 +94,13 @@ impl<'queue, T> Debug for DequeueFuture<'queue, T> {
 
 impl<T> AsyncSender<T> {
     /// Enqueues the given Data
-    pub fn enqueue(&self, data: T) {
+    pub fn enqueue(&self, data: T) -> Result<(), (T, EnqueueError)> {
         // Enqueue the Data on the underlying Queue itself
-        self.queue.enqueue(data);
+        self.queue.enqueue(data)?;
 
         // Notify the Receiver about new Data
         self.waker.wake();
+        Ok(())
     }
 }
 
@@ -126,7 +132,7 @@ mod tests {
     async fn enqueue_dequeue() {
         let (mut rx, tx) = async_queue();
 
-        tx.enqueue(13);
-        assert_eq!(Some(13), rx.dequeue().await);
+        tx.enqueue(13).unwrap();
+        assert_eq!(Ok(13), rx.dequeue().await);
     }
 }

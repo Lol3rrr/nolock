@@ -87,6 +87,8 @@ impl<T> Node<T> {
 
 /// The Sending-Half for the queue
 pub struct BoundedSender<T> {
+    /// Indicates if the Queue has been closed or not
+    closed: Arc<atomic::AtomicBool>,
     /// The Index of the next Node to read in the Buffer
     head: usize,
     /// The underlying Buffer of Nodes
@@ -95,6 +97,8 @@ pub struct BoundedSender<T> {
 
 /// The Receiving-Half for the Queue
 pub struct BoundedReceiver<T> {
+    /// Indicates if the Queue has been closed or not
+    closed: Arc<atomic::AtomicBool>,
     /// The Index of the next Node to store Data into
     tail: usize,
     /// The underlying Buffer of Nodes
@@ -118,8 +122,17 @@ const fn next_element(current: usize, length: usize) -> usize {
 }
 
 impl<T> BoundedSender<T> {
+    /// Returns whether or not the Queue has been closed by the other Side
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(atomic::Ordering::Acquire)
+    }
+
     /// Attempts to Enqueue the given piece of Data
     pub fn try_enqueue(&mut self, data: T) -> Result<(), (T, EnqueueError)> {
+        if self.is_closed() {
+            return Err((data, EnqueueError::Closed));
+        }
+
         // Get a reference to the current Entry where we would enqueue the next
         // Element
         let buffer_entry = &self.buffer[self.head];
@@ -145,13 +158,16 @@ impl<T> BoundedSender<T> {
 
     /// A blocking enqueue Operation. This is obviously not lock-free anymore
     /// and will simply spin while trying to enqueue the Data until it works
-    pub fn enqueue(&mut self, mut data: T) {
+    pub fn enqueue(&mut self, mut data: T) -> Result<(), (T, EnqueueError)> {
         loop {
             match self.try_enqueue(data) {
-                Ok(_) => return,
-                Err((d, _)) => {
-                    data = d;
-                }
+                Ok(_) => return Ok(()),
+                Err((d, e)) => match e {
+                    EnqueueError::WouldBlock => {
+                        data = d;
+                    }
+                    EnqueueError::Closed => return Err((d, EnqueueError::Closed)),
+                },
             };
         }
     }
@@ -171,10 +187,21 @@ impl<T> Debug for BoundedSender<T> {
     }
 }
 
+impl<T> Drop for BoundedSender<T> {
+    fn drop(&mut self) {
+        self.closed.store(true, atomic::Ordering::Release);
+    }
+}
+
 unsafe impl<T> Send for BoundedSender<T> {}
 unsafe impl<T> Sync for BoundedSender<T> {}
 
 impl<T> BoundedReceiver<T> {
+    /// Checks if the Queue has been  closed by the other Side
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(atomic::Ordering::Acquire)
+    }
+
     /// Attempts to Dequeue the given piece of Data
     pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
         // Get the Node where would read the next Item from
@@ -183,6 +210,10 @@ impl<T> BoundedReceiver<T> {
         // If the Node is not set, we should return an Error as the Queue is
         // empty and there is nothing for us to return in this Operation
         if !buffer_entry.is_set() {
+            if self.is_closed() {
+                return Err(DequeueError::Closed);
+            }
+
             return Err(DequeueError::WouldBlock);
         }
 
@@ -201,9 +232,13 @@ impl<T> BoundedReceiver<T> {
     /// spins while trying to dequeue until it works.
     pub fn dequeue(&mut self) -> Option<T> {
         loop {
-            if let Ok(d) = self.try_dequeue() {
-                return Some(d);
-            }
+            match self.try_dequeue() {
+                Ok(d) => return Some(d),
+                Err(e) => match e {
+                    DequeueError::WouldBlock => {}
+                    DequeueError::Closed => return None,
+                },
+            };
         }
     }
 
@@ -222,6 +257,12 @@ impl<T> Debug for BoundedReceiver<T> {
     }
 }
 
+impl<T> Drop for BoundedReceiver<T> {
+    fn drop(&mut self) {
+        self.closed.store(true, atomic::Ordering::Release);
+    }
+}
+
 unsafe impl<T> Send for BoundedReceiver<T> {}
 unsafe impl<T> Sync for BoundedReceiver<T> {}
 
@@ -234,14 +275,20 @@ pub fn queue<T>(size: usize) -> (BoundedReceiver<T>, BoundedSender<T>) {
         raw_buffer.push(Node::new());
     }
 
+    let closed = Arc::new(atomic::AtomicBool::new(false));
     let buffer = Arc::new(raw_buffer);
 
     (
         BoundedReceiver {
+            closed: closed.clone(),
             buffer: buffer.clone(),
             tail: 0,
         },
-        BoundedSender { buffer, head: 0 },
+        BoundedSender {
+            closed,
+            buffer,
+            head: 0,
+        },
     )
 }
 
@@ -258,16 +305,20 @@ mod tests {
     }
     #[test]
     fn enqueue_will_block() {
-        let (_, mut tx) = queue(1);
+        let (rx, mut tx) = queue(1);
 
         assert_eq!(Ok(()), tx.try_enqueue(13));
         assert_eq!(Err((14, EnqueueError::WouldBlock)), tx.try_enqueue(14));
+
+        drop(rx);
     }
     #[test]
     fn dequeue_will_block() {
-        let (mut rx, _) = queue::<usize>(1);
+        let (mut rx, tx) = queue::<usize>(1);
 
         assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
+
+        drop(tx);
     }
 
     #[test]
@@ -278,5 +329,45 @@ mod tests {
             assert_eq!(Ok(()), tx.try_enqueue(i));
             assert_eq!(Ok(i), rx.try_dequeue());
         }
+    }
+
+    #[test]
+    fn enqueue_is_closed() {
+        let (rx, mut tx) = queue(3);
+
+        drop(rx);
+        assert_eq!(Err((13, EnqueueError::Closed)), tx.try_enqueue(13));
+    }
+    #[test]
+    fn dequeue_is_closed() {
+        let (mut rx, tx) = queue::<usize>(3);
+
+        drop(tx);
+        assert_eq!(Err(DequeueError::Closed), rx.try_dequeue());
+    }
+    #[test]
+    fn enqueue_dequeue_is_closed() {
+        let (mut rx, mut tx) = queue::<usize>(3);
+
+        tx.try_enqueue(13).unwrap();
+        drop(tx);
+
+        assert_eq!(Ok(13), rx.try_dequeue());
+        assert_eq!(Err(DequeueError::Closed), rx.try_dequeue());
+    }
+
+    #[test]
+    fn blocking_enqueue_closed() {
+        let (rx, mut tx) = queue::<usize>(3);
+        drop(rx);
+
+        assert_eq!(Err((13, EnqueueError::Closed)), tx.enqueue(13));
+    }
+    #[test]
+    fn blocking_dequeue_closed() {
+        let (mut rx, tx) = queue::<usize>(3);
+        drop(tx);
+
+        assert_eq!(None, rx.dequeue());
     }
 }

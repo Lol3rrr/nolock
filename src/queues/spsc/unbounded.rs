@@ -18,9 +18,12 @@
 
 mod d_spsc;
 
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    sync::{atomic, Arc},
+};
 
-use super::{bounded, DequeueError};
+use super::{bounded, DequeueError, EnqueueError};
 
 #[cfg(feature = "async")]
 mod async_queue;
@@ -33,6 +36,8 @@ pub use async_queue::*;
 
 /// The Sender-Half of an unbounded Queue
 pub struct UnboundedSender<T> {
+    /// Indicates if the Queue has been closed or not
+    closed: Arc<atomic::AtomicBool>,
     /// The Size of each Buffer
     buffer_size: usize,
     /// The current Buffer, where we insert entries
@@ -43,6 +48,11 @@ pub struct UnboundedSender<T> {
 }
 
 impl<T> UnboundedSender<T> {
+    /// Checks if the current Queue has been closed
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(atomic::Ordering::Acquire)
+    }
+
     /// Creates a new BoundedQueue and sends the Receiving half of the new
     /// BoundedQueue to the Consumer, using the `inuse_sender`.
     fn next_w(&mut self) -> bounded::BoundedSender<T> {
@@ -56,7 +66,11 @@ impl<T> UnboundedSender<T> {
     }
 
     /// Enqueues the Data
-    pub fn enqueue(&mut self, data: T) {
+    pub fn enqueue(&mut self, data: T) -> Result<(), (T, EnqueueError)> {
+        if self.is_closed() {
+            return Err((data, EnqueueError::Closed));
+        }
+
         // Attempt to enqueue the Data into the current BoundedQueue.
         //
         // NOTE:
@@ -79,6 +93,8 @@ impl<T> UnboundedSender<T> {
                 panic!("The new Buffer is always empty");
             }
         }
+
+        Ok(())
     }
 }
 
@@ -88,11 +104,19 @@ impl<T> Debug for UnboundedSender<T> {
     }
 }
 
+impl<T> Drop for UnboundedSender<T> {
+    fn drop(&mut self) {
+        self.closed.store(true, atomic::Ordering::Release);
+    }
+}
+
 unsafe impl<T> Send for UnboundedSender<T> {}
 unsafe impl<T> Sync for UnboundedSender<T> {}
 
 /// The Receiver-Half of an unbounded Queue
 pub struct UnboundedReceiver<T> {
+    /// Indicates if the Queue has been closed or not
+    closed: Arc<atomic::AtomicBool>,
     /// The current BoundedQueue from which items are being Dequeued
     buf_r: bounded::BoundedReceiver<T>,
     /// This is used to receive information about any new BoundedQueues created
@@ -101,6 +125,11 @@ pub struct UnboundedReceiver<T> {
 }
 
 impl<T> UnboundedReceiver<T> {
+    /// Checks if the current Queue has been closed
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(atomic::Ordering::Acquire)
+    }
+
     /// Attempts to dequeue a single Element from the Queue
     pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
         // Attempt to Dequeue an element from the current BoundedQueue
@@ -129,7 +158,13 @@ impl<T> UnboundedReceiver<T> {
                 // There is no other Queue that the Producer moved on to,
                 // meaning that the entire Queue is simply empty so we should
                 // return the right Error and exit
-                Err(_) => Err(DequeueError::WouldBlock),
+                Err(_) => {
+                    if self.is_closed() {
+                        Err(DequeueError::Closed)
+                    } else {
+                        Err(DequeueError::WouldBlock)
+                    }
+                }
             },
         }
     }
@@ -139,9 +174,13 @@ impl<T> UnboundedReceiver<T> {
     /// the Queue until it succeeds
     pub fn dequeue(&mut self) -> Option<T> {
         loop {
-            if let Ok(data) = self.try_dequeue() {
-                return Some(data);
-            }
+            match self.try_dequeue() {
+                Ok(d) => return Some(d),
+                Err(e) => match e {
+                    DequeueError::WouldBlock => {}
+                    DequeueError::Closed => return None,
+                },
+            };
         }
     }
 }
@@ -149,6 +188,12 @@ impl<T> UnboundedReceiver<T> {
 impl<T> Debug for UnboundedReceiver<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "UnboundedReceiver ()")
+    }
+}
+
+impl<T> Drop for UnboundedReceiver<T> {
+    fn drop(&mut self) {
+        self.closed.store(true, atomic::Ordering::Release);
     }
 }
 
@@ -162,12 +207,16 @@ pub fn queue<T>() -> (UnboundedReceiver<T>, UnboundedSender<T>) {
     let (inuse_rx, inuse_tx) = d_spsc::unbounded_basic_queue();
     let (initial_rx, initial_tx) = bounded::queue(buffer_size);
 
+    let closed = Arc::new(atomic::AtomicBool::new(false));
+
     (
         UnboundedReceiver {
+            closed: closed.clone(),
             buf_r: initial_rx,
             inuse_recv: inuse_rx,
         },
         UnboundedSender {
+            closed,
             buffer_size,
             buf_w: initial_tx,
             inuse_sender: inuse_tx,
@@ -183,7 +232,7 @@ mod tests {
     fn enqueue_dequeue() {
         let (mut rx, mut tx) = queue();
 
-        tx.enqueue(13);
+        tx.enqueue(13).unwrap();
         assert_eq!(Ok(13), rx.try_dequeue());
     }
 
@@ -191,12 +240,27 @@ mod tests {
     fn multi_buffer() {
         let (mut rx, mut tx) = queue();
 
-        tx.enqueue(13);
-        tx.enqueue(14);
-        tx.enqueue(15);
+        tx.enqueue(13).unwrap();
+        tx.enqueue(14).unwrap();
+        tx.enqueue(15).unwrap();
 
         assert_eq!(Ok(13), rx.try_dequeue());
         assert_eq!(Ok(14), rx.try_dequeue());
         assert_eq!(Ok(15), rx.try_dequeue());
+    }
+
+    #[test]
+    fn enqueue_closed() {
+        let (rx, mut tx) = queue();
+        drop(rx);
+
+        assert_eq!(Err((13, EnqueueError::Closed)), tx.enqueue(13));
+    }
+    #[test]
+    fn dequeue_closed() {
+        let (mut rx, tx) = queue::<usize>();
+        drop(tx);
+
+        assert_eq!(Err(DequeueError::Closed), rx.try_dequeue());
     }
 }

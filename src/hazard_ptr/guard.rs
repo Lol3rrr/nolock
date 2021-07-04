@@ -31,7 +31,11 @@ impl<T> Drop for Guard<T> {
         let record = ManuallyDrop::new(unsafe { Box::from_raw(self.record) });
         record.reset();
 
-        self.record_returner.enqueue(self.record);
+        // TODO
+        // We can "savely" ignore this Result because even if we detect a
+        // failure in this case, there is nothing we can really do about it...
+        // I think?
+        let _ = self.record_returner.enqueue(self.record);
     }
 }
 
