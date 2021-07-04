@@ -210,8 +210,14 @@ impl<T> BoundedReceiver<T> {
         // If the Node is not set, we should return an Error as the Queue is
         // empty and there is nothing for us to return in this Operation
         if !buffer_entry.is_set() {
+            // Check if the Queue has been marked as closed
             if self.is_closed() {
-                return Err(DequeueError::Closed);
+                // We need to recheck the current Node, because it may have
+                // been set in the mean time and then the closed flag was
+                // updated
+                if !buffer_entry.is_set() {
+                    return Err(DequeueError::Closed);
+                }
             }
 
             return Err(DequeueError::WouldBlock);

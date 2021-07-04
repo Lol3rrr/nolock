@@ -61,11 +61,41 @@ pub struct Receiver<T> {
 
 impl<T> Sender<T> {
     /// Checks if the Queue has been closed by either Side
+    ///
+    /// # Example:
+    /// ```
+    /// # use nolock::queues::mpsc::jiffy;
+    /// let (rx, tx) = jiffy::queue::<usize>();
+    ///
+    /// // The receiver gets dropped and is therefore now considered closed
+    /// drop(rx);
+    ///
+    /// assert_eq!(true, tx.is_closed());
+    /// ```
     pub fn is_closed(&self) -> bool {
         self.closed.load(atomic::Ordering::Acquire)
     }
 
-    /// Enqueues the given piece of Data
+    /// Enqueues the given Data on the queue
+    ///
+    /// # Returns
+    /// If the Data was sucessfully enqueued `Ok` will be returned, otherwise
+    /// it will return the right Error according to the [`EnqueueError`].
+    /// However as this is an unbounded-Queue, the only real reason for a
+    /// failure is when the receiving Side was dropped/closed.
+    ///
+    /// # Example
+    /// ```
+    /// # use nolock::queues::mpsc::jiffy;
+    /// let (rx, tx) = jiffy::queue::<usize>();
+    ///
+    /// // Enqueue some Data
+    /// tx.enqueue(13);
+    /// tx.enqueue(14);
+    /// tx.enqueue(15);
+    ///
+    /// # drop(rx);
+    /// ```
     pub fn enqueue(&self, data: T) -> Result<(), (T, EnqueueError)> {
         if self.is_closed() {
             return Err((data, EnqueueError::Closed));
@@ -152,6 +182,18 @@ impl<T> Drop for Sender<T> {
 
 impl<T> Receiver<T> {
     /// Checks if the Queue has been closed by either Side
+    ///
+    /// # Example:
+    /// ```
+    /// # use nolock::queues::mpsc::jiffy;
+    ///
+    /// let (mut rx, tx) = jiffy::queue::<usize>();
+    ///
+    /// // The Producer side gets dropped and is therefore considered closed
+    /// drop(tx);
+    ///
+    /// assert_eq!(true, rx.is_closed());
+    /// ```
     pub fn is_closed(&self) -> bool {
         self.closed.load(atomic::Ordering::Acquire)
     }
@@ -198,6 +240,24 @@ impl<T> Receiver<T> {
     }
 
     /// Attempts to dequeue the next entry in the Queue
+    ///
+    /// # Example
+    /// ```
+    /// # use nolock::queues::mpsc::jiffy;
+    /// # use nolock::queues::mpsc::DequeueError;
+    ///
+    /// let (mut rx, tx) = jiffy::queue::<usize>();
+    ///
+    /// // Insert one Element into the Queue
+    /// tx.enqueue(13).unwrap();
+    ///
+    /// // Retrieve the first and only Element from the Queue
+    /// assert_eq!(Ok(13), rx.try_dequeue());
+    /// // Attempt to get the next Element, but there is none so we get
+    /// // the right Error indicating that there is no Element to dequeue at
+    /// // that moment
+    /// assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
+    /// ```
     pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
         // Loads the current Buffer that should be used
         let mut current_queue = self.load_head_of_queue();

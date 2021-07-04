@@ -114,6 +114,14 @@ impl<T> UnboundedReceiver<T> {
 
         Ok(data)
     }
+
+    /// Checks if the Queue contains at least one more element to dequeue
+    pub fn has_next(&self) -> bool {
+        let prev_head = ManuallyDrop::new(unsafe { Box::from_raw(self.head) });
+        let next_ptr = prev_head.next.load(atomic::Ordering::Acquire);
+
+        !next_ptr.is_null()
+    }
 }
 
 impl<T> Debug for UnboundedReceiver<T> {

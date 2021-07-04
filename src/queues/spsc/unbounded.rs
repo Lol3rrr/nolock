@@ -127,7 +127,7 @@ pub struct UnboundedReceiver<T> {
 impl<T> UnboundedReceiver<T> {
     /// Checks if the current Queue has been closed
     pub fn is_closed(&self) -> bool {
-        self.closed.load(atomic::Ordering::Acquire)
+        self.buf_r.is_closed() && !self.inuse_recv.has_next()
     }
 
     /// Attempts to dequeue a single Element from the Queue
@@ -136,35 +136,29 @@ impl<T> UnboundedReceiver<T> {
         match self.buf_r.try_dequeue() {
             // If we dequeued an Item, simply return that and we are done
             Ok(d) => Ok(d),
-            // If we failed to dequeue an item, there are two possible
-            // situations:
-            // * The currently used BoundedQueue is empty and the producer has
-            //   moved on to a new BoundedQueue for all further elements
-            // * The entire Queue is simply empty
+            // If we receive this Error, we know that the Queue is empty, but
+            // the Producer has not moved on to another Queue, as it would then
+            // be considered Closed and would return a different Error
+            Err(DequeueError::WouldBlock) => Err(DequeueError::WouldBlock),
+            // This indicates that the Producer has dropped the current Queue,
+            // which indicates that they either moved on to a new Queue already,
+            // as this one had been completly filled before, or that the entire
+            // Producer has been dropped.
             //
-            // To resolve this we attempt to dequeue a new BoundedQueue, which
-            // should only work if the Producer has moved on
-            Err(_) => match self.inuse_recv.try_dequeue() {
-                // The Producer moved on from the previous Buffer and will
-                // continue inserting Items into this new BoundedQueue until
-                // this one is eventually full as well
+            // We therefore attempt to get the Next queue, to which the
+            // Producer would have moved on
+            Err(DequeueError::Closed) => match self.inuse_recv.try_dequeue() {
+                // If we find a new Queue, we can simply replace our old one
+                // with the new one and then attempt to Dequeue th first
+                // Element of it as our result
                 Ok(n_queue) => {
-                    // Replace the currently held BoundedQueue with the newly
-                    // received One
                     self.buf_r = n_queue;
-                    // Attempt to dequeue from this new BoundedQueue and then
                     self.buf_r.try_dequeue()
                 }
-                // There is no other Queue that the Producer moved on to,
-                // meaning that the entire Queue is simply empty so we should
-                // return the right Error and exit
-                Err(_) => {
-                    if self.is_closed() {
-                        Err(DequeueError::Closed)
-                    } else {
-                        Err(DequeueError::WouldBlock)
-                    }
-                }
+                // If we cant find a new Queue, that means that the Producer
+                // has been closed and therefore the entire Queue is now also
+                // closed as there are no more Entries left in the Queue
+                Err(_) => Err(DequeueError::Closed),
             },
         }
     }

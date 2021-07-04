@@ -23,6 +23,11 @@ pub struct AsyncSender<T> {
 }
 
 impl<T> AsyncReceiver<T> {
+    /// Checks if the current Queue has been closed by either side
+    pub fn is_closed(&self) -> bool {
+        self.queue.is_closed()
+    }
+
     /// This attempts to dequeue the first Element in the Queue.
     ///
     /// This is the same as [`try_dequeue`](Receiver::try_dequeue) on the
