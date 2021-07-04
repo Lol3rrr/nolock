@@ -24,6 +24,11 @@ use std::{
 
 use super::{DequeueError, EnqueueError};
 
+#[cfg(feature = "async")]
+mod async_queue;
+#[cfg(feature = "async")]
+pub use async_queue::*;
+
 /// A Node is a single Entry in the Buffer of the Queue
 struct Node<T> {
     /// The actual Data stored in the Node itself

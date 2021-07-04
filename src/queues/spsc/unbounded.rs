@@ -22,6 +22,11 @@ use std::fmt::Debug;
 
 use super::{bounded, DequeueError};
 
+#[cfg(feature = "async")]
+mod async_queue;
+#[cfg(feature = "async")]
+pub use async_queue::*;
+
 // TODO
 // Add Support for the Caches to improve the Performance and reduce the overhead
 // of the Allocator
