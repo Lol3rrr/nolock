@@ -20,7 +20,7 @@ jobs:
     - name: Run Clippy
       run: cargo clippy --
   miri:
-    name: Test (Miri)
+    name: Test Queues (Miri)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -32,4 +32,4 @@ jobs:
           rustup override set "$MIRI_NIGHTLY"
           rustup component add miri
       - name: Run Miri
-        run: cargo miri test
+        run: cargo miri test queues

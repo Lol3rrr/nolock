@@ -2,16 +2,23 @@
 
 use super::super::{bounded, DequeueError};
 
-use std::{fmt::Debug, mem::ManuallyDrop, sync::atomic};
+use std::{
+    fmt::Debug,
+    mem::ManuallyDrop,
+    sync::{atomic, Arc},
+};
 
 /// The Node datastructure used for the unbounded Queue
 struct Node<T> {
     data: Option<T>,
+    previous: *mut Self,
     next: atomic::AtomicPtr<Node<T>>,
 }
 
 /// The Unbounded Sender Half
 pub struct UnboundedSender<T> {
+    /// Indicates whether or not the Queue has been closed
+    closed: Arc<atomic::AtomicBool>,
     /// The Tail of the Queue
     tail: *mut Node<T>,
     /// Receiver for empty Nodes that were consumed by the Queue-Receiver and
@@ -22,13 +29,14 @@ pub struct UnboundedSender<T> {
 
 impl<T> UnboundedSender<T> {
     /// Creates a new Node with the given Data already stored in the Node
-    fn create_new_node(&mut self, data: T) -> Box<Node<T>> {
+    fn create_new_node(&mut self, data: T, previous: *mut Node<T>) -> Box<Node<T>> {
         // Attempt to receive a new "recycled" Node
         match self.node_receiver.try_dequeue() {
             // We received a "recycled" Node that we can use
             Ok(mut n) => {
                 // Overwrite the Data
                 n.data = Some(data);
+                n.previous = previous;
                 // Reset the Next-Ptr to null as this will be the new Tail
                 n.next
                     .store(std::ptr::null_mut(), atomic::Ordering::Release);
@@ -40,6 +48,7 @@ impl<T> UnboundedSender<T> {
             // next Ptr and then allocate it on the Heap, using the Box
             Err(_) => Box::new(Node {
                 data: Some(data),
+                previous,
                 next: atomic::AtomicPtr::new(std::ptr::null_mut()),
             }),
         }
@@ -52,9 +61,13 @@ impl<T> UnboundedSender<T> {
     }
 
     /// Enqueues the given Data
-    pub fn enqueue(&mut self, data: T) {
+    pub fn enqueue(&mut self, data: T) -> Result<(), T> {
+        if self.closed.load(atomic::Ordering::Acquire) {
+            return Err(data);
+        }
+
         // Obtain a new Node with the given Data already set as the Data field
-        let node = self.create_new_node(data);
+        let node = self.create_new_node(data, self.tail);
 
         // Get a PTR to the node
         let node_ptr = Box::into_raw(node);
@@ -64,6 +77,8 @@ impl<T> UnboundedSender<T> {
         cur_tail.next.store(node_ptr, atomic::Ordering::Release);
         // Stores the new Node as the current tail of the Queue
         self.tail = node_ptr;
+
+        Ok(())
     }
 }
 
@@ -73,8 +88,32 @@ impl<T> Debug for UnboundedSender<T> {
     }
 }
 
+impl<T> Drop for UnboundedSender<T> {
+    fn drop(&mut self) {
+        match self.closed.compare_exchange(
+            false,
+            true,
+            atomic::Ordering::SeqCst,
+            atomic::Ordering::SeqCst,
+        ) {
+            Ok(_) => {}
+            Err(_) => {
+                let mut current_ptr = self.tail;
+                while !current_ptr.is_null() {
+                    let current = unsafe { Box::from_raw(current_ptr) };
+                    current_ptr = current.previous;
+
+                    drop(current);
+                }
+            }
+        };
+    }
+}
+
 /// The Unbounded Receiver Half
 pub struct UnboundedReceiver<T> {
+    /// Indicates whether or not the Queue has been closed
+    closed: Arc<atomic::AtomicBool>,
     /// The current Head of the Queue
     head: *mut Node<T>,
     /// The Queue to return old Nodes to, to help remove the impact of dynamic
@@ -130,21 +169,48 @@ impl<T> Debug for UnboundedReceiver<T> {
     }
 }
 
+impl<T> Drop for UnboundedReceiver<T> {
+    fn drop(&mut self) {
+        match self.closed.compare_exchange(
+            false,
+            true,
+            atomic::Ordering::SeqCst,
+            atomic::Ordering::SeqCst,
+        ) {
+            Ok(_) => {}
+            Err(_) => {
+                let mut current_ptr = self.head;
+                while !current_ptr.is_null() {
+                    let current = unsafe { Box::from_raw(current_ptr) };
+                    current_ptr = current.next.load(atomic::Ordering::Acquire);
+
+                    drop(current);
+                }
+            }
+        };
+    }
+}
+
 /// Creates a new Unbounded Queue-Pair
 pub fn unbounded_basic_queue<T>() -> (UnboundedReceiver<T>, UnboundedSender<T>) {
     let (node_rx, node_tx) = bounded::queue(64);
     let dummy_node = Box::new(Node {
         data: None,
+        previous: std::ptr::null_mut(),
         next: atomic::AtomicPtr::new(std::ptr::null_mut()),
     });
     let dummy_ptr = Box::into_raw(dummy_node);
 
+    let closed = Arc::new(atomic::AtomicBool::new(false));
+
     (
         UnboundedReceiver {
+            closed: closed.clone(),
             head: dummy_ptr,
             node_return: node_tx,
         },
         UnboundedSender {
+            closed,
             tail: dummy_ptr,
             node_receiver: node_rx,
         },
