@@ -22,7 +22,7 @@ pub struct BufferList<T> {
 
 impl<T> BufferList<T> {
     /// Creates a new Boxed-BufferList
-    pub fn boxed(previous: *const BufferList<T>, position_in_queue: usize) -> Box<Self> {
+    pub fn boxed(previous: *const Self, position_in_queue: usize) -> Box<Self> {
         let buffer = {
             let mut raw = Vec::with_capacity(BUFFER_SIZE);
             for _ in 0..BUFFER_SIZE {
@@ -192,17 +192,13 @@ impl<T> BufferList<T> {
     /// by the given Ptr, as well as all the previous BufferLists, by walking
     /// the entire Chain of BufferLists
     pub fn deallocate_all(ptr: *mut Self) {
-        // Get the current BufferList from the given Ptr
-        let boxed = unsafe { Box::from_raw(ptr) };
-        // If the current BufferList has a previous Entry, clean that up first
-        if !boxed.previous.is_null() {
-            // Recursively call itself with the previous BufferList in the
-            // Chain
-            Self::deallocate_all(boxed.previous as *mut Self);
-        }
+        let mut current_ptr = ptr;
+        while !current_ptr.is_null() {
+            let current = unsafe { Box::from_raw(current_ptr) };
+            current_ptr = current.previous as *mut Self;
 
-        // Dropping the Boxed-BufferList will properly deallocate it
-        drop(boxed);
+            drop(current);
+        }
     }
 }
 

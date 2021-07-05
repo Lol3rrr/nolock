@@ -172,6 +172,8 @@ impl<T> Sender<T> {
         // Calculate the Starting-Location of the currently loaded
         // Buffer
         let mut start = (tmp_buffer.position_in_queue - 1) * BUFFER_SIZE;
+
+        let mut last_buffer = true;
         // If the Target-Location is before the current Buffer's start,
         // we need to move back in the List of Buffers until we find the one
         // that actually contains our Target-Location
@@ -179,6 +181,8 @@ impl<T> Sender<T> {
             // Load the previous Buffer in regards to our current one
             tmp_buffer_ptr = tmp_buffer.previous as *mut BufferList<T>;
             tmp_buffer = ManuallyDrop::new(unsafe { Box::from_raw(tmp_buffer_ptr) });
+
+            last_buffer = false;
 
             // Recalculate the Buffers Starting position for the new one
             start = (tmp_buffer.position_in_queue - 1) * BUFFER_SIZE;
@@ -189,10 +193,12 @@ impl<T> Sender<T> {
 
         // Actually store the Data into the Buffer at the previously
         // calculated Index
-        tmp_buffer.buffer[index].store(data);
+        unsafe { tmp_buffer.buffer.get_unchecked(index) }.store(data);
 
-        // TODO
-        // Possible optimization regarding to pre-allocate the next buffer early
+        if last_buffer && index == 2 {
+            tmp_buffer.allocate_next(tmp_buffer_ptr, &self.tail_of_queue);
+        }
+
         Ok(())
     }
 }

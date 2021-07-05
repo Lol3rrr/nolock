@@ -9,6 +9,8 @@ criterion_group!(
     spsc::bounded_enqueue_dequeue,
     mpsc::jiffy_enqueue_dequeue,
     mpsc::std_enqueue_dequeue,
+    mpsc::jiffy_concurrent_enqueue,
+    mpsc::std_concurrent_enqueue,
 );
 
 criterion_main!(benches);
