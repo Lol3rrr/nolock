@@ -17,7 +17,6 @@
 //! * [FastForward for Efficient Pipeline Parallelism - A Cache-Optimized Concurrent Lock-Free Queue](https://www.researchgate.net/publication/213894711_FastForward_for_Efficient_Pipeline_Parallelism_A_Cache-Optimized_Concurrent_Lock-Free_Queue)
 
 use std::{
-    cell::UnsafeCell,
     fmt::Debug,
     sync::{atomic, Arc},
 };
@@ -29,61 +28,8 @@ mod async_queue;
 #[cfg(feature = "async")]
 pub use async_queue::*;
 
-/// A Node is a single Entry in the Buffer of the Queue
-struct Node<T> {
-    /// The actual Data stored in the Node itself
-    data: UnsafeCell<Option<T>>,
-    /// Indicates whether or not the current Node actually contains Data
-    is_set: atomic::AtomicBool,
-}
-
-impl<T> Node<T> {
-    /// Creates a new Empty Node
-    pub fn new() -> Self {
-        Self {
-            data: UnsafeCell::new(None),
-            is_set: atomic::AtomicBool::new(false),
-        }
-    }
-
-    /// Checks if the current Node is marked as `set` and actually contains
-    /// Data that could be read
-    pub fn is_set(&self) -> bool {
-        self.is_set.load(atomic::Ordering::Acquire)
-    }
-
-    /// Stores the given Data into the current Node and marks the Node as being
-    /// `set` and ready to be consumed
-    pub fn store(&self, data: T) {
-        // Get the mutable access to the underlying Data in order to overwrite
-        // it with the given new Data
-        let d_ptr = self.data.get();
-        let mut_data = unsafe { &mut *d_ptr };
-
-        // Actually store the Data into the Node
-        mut_data.replace(data);
-
-        // Mark the Node as `set` again
-        self.is_set.store(true, atomic::Ordering::Release);
-    }
-
-    /// Attempts to load the current Data from the Node and marks the Data as
-    /// empty again
-    pub fn load(&self) -> T {
-        // Get the mutable access to the underlying Data in order to properly
-        // take it out and replace it with empty Data
-        let d_ptr = self.data.get();
-        let mut_data = unsafe { &mut *d_ptr };
-
-        // Take the Data out of the Option
-        let data = mut_data.take().unwrap();
-        // Mark the Node as empty again
-        self.is_set.store(false, atomic::Ordering::Release);
-
-        // Return the Data
-        data
-    }
-}
+mod node;
+use node::Node;
 
 /// The Sending-Half for the queue
 pub struct BoundedSender<T> {
@@ -122,12 +68,54 @@ const fn next_element(current: usize, length: usize) -> usize {
 }
 
 impl<T> BoundedSender<T> {
-    /// Returns whether or not the Queue has been closed by the other Side
+    /// Returns whether or not the Queue has been closed by the Consumer
+    ///
+    /// # Example
+    /// ```
+    /// # use nolock::queues::spsc::bounded;
+    /// let (rx, tx) = bounded::queue::<usize>(3);
+    ///
+    /// // Drop the Consumer and therefore also close the Queue
+    /// drop(rx);
+    ///
+    /// assert_eq!(true, tx.is_closed());
+    /// ```
     pub fn is_closed(&self) -> bool {
         self.closed.load(atomic::Ordering::Acquire)
     }
 
     /// Attempts to Enqueue the given piece of Data
+    ///
+    /// # Example:
+    /// Enqueue Data when there is still space
+    /// ```
+    /// # use nolock::queues::spsc::bounded;
+    /// // Create a new Queue with the capacity for 16 Elements
+    /// let (mut rx, mut tx) = bounded::queue::<usize>(16);
+    ///
+    /// // Enqueue some Data
+    /// assert_eq!(Ok(()), tx.try_enqueue(13));
+    ///
+    /// # assert_eq!(Ok(13), rx.try_dequeue());
+    /// ```
+    ///
+    /// Enqueue Data when there is no more space
+    /// ```
+    /// # use nolock::queues::spsc::bounded;
+    /// # use nolock::queues::spsc::EnqueueError;
+    /// // Create a new Queue with the capacity for 16 Elements
+    /// let (mut rx, mut tx) = bounded::queue::<usize>(16);
+    ///
+    /// // Fill up the Queue
+    /// for i in 0..16 {
+    ///   assert_eq!(Ok(()), tx.try_enqueue(i));
+    /// }
+    ///
+    /// // Attempt to enqueue some Data, but there is no more room
+    /// assert_eq!(Err((13, EnqueueError::WouldBlock)), tx.try_enqueue(13));
+    ///
+    /// # drop(rx);
+    /// ```
     pub fn try_enqueue(&mut self, data: T) -> Result<(), (T, EnqueueError)> {
         if self.is_closed() {
             return Err((data, EnqueueError::Closed));
@@ -197,12 +185,55 @@ unsafe impl<T> Send for BoundedSender<T> {}
 unsafe impl<T> Sync for BoundedSender<T> {}
 
 impl<T> BoundedReceiver<T> {
-    /// Checks if the Queue has been  closed by the other Side
+    /// Checks if the Queue has been closed by the Producer
+    ///
+    /// # Note
+    /// Even when this indicates that the Queue has been closed, there might
+    /// still be Items in the Queue left that should first be dequeued by the
+    /// Consumer before discarding the entire Queue
+    ///
+    /// # Example
+    /// ```
+    /// # use nolock::queues::spsc::bounded;
+    /// let (rx, tx) = bounded::queue::<usize>(3);
+    ///
+    /// // Drop the Producer and therefore also close the Queue
+    /// drop(tx);
+    ///
+    /// assert_eq!(true, rx.is_closed());
+    /// ```
     pub fn is_closed(&self) -> bool {
         self.closed.load(atomic::Ordering::Acquire)
     }
 
-    /// Attempts to Dequeue the given piece of Data
+    /// Attempts to Dequeue a single Element from the Queue
+    ///
+    /// # Example
+    /// There was something to dequeu
+    /// ```
+    /// # use nolock::queues::spsc::bounded;
+    /// // Create a new Queue with the Capacity for 16-Elements
+    /// let (mut rx, mut tx) = bounded::queue::<usize>(16);
+    ///
+    /// // Enqueue the Element
+    /// tx.try_enqueue(13);
+    ///
+    /// // Dequeue the Element again
+    /// assert_eq!(Ok(13), rx.try_dequeue());
+    /// ```
+    ///
+    /// The Queue is empty and therefore nothing could be dequeued
+    /// ```
+    /// # use nolock::queues::spsc::bounded;
+    /// # use nolock::queues::spsc::DequeueError;
+    /// // Create a new Queue with the Capacity for 16-Elements
+    /// let (mut rx, mut tx) = bounded::queue::<usize>(16);
+    ///
+    /// // Dequeue the Element again
+    /// assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
+    ///
+    /// # drop(tx);
+    /// ```
     pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
         // Get the Node where would read the next Item from
         let buffer_entry = &self.buffer[self.tail];
@@ -272,12 +303,13 @@ impl<T> Drop for BoundedReceiver<T> {
 unsafe impl<T> Send for BoundedReceiver<T> {}
 unsafe impl<T> Sync for BoundedReceiver<T> {}
 
-/// Creates a new Bounded-Queue with the given Size
-pub fn queue<T>(size: usize) -> (BoundedReceiver<T>, BoundedSender<T>) {
+/// Creates a new Bounded-Queue with the given Capacity and returns the
+/// corresponding Handles ([`BoundedReceiver`], [`BoundedSender`])
+pub fn queue<T>(capacity: usize) -> (BoundedReceiver<T>, BoundedSender<T>) {
     // Create the underlying Buffer of Nodes and fill it up with empty Nodes
     // as the initial Configuration
-    let mut raw_buffer = Vec::with_capacity(size);
-    for _ in 0..size {
+    let mut raw_buffer = Vec::with_capacity(capacity);
+    for _ in 0..capacity {
         raw_buffer.push(Node::new());
     }
 
@@ -375,5 +407,31 @@ mod tests {
         drop(tx);
 
         assert_eq!(None, rx.dequeue());
+    }
+
+    #[test]
+    fn is_empty() {
+        let (mut rx, mut tx) = queue::<usize>(3);
+
+        assert_eq!(true, rx.is_empty());
+
+        tx.try_enqueue(13).unwrap();
+        assert_eq!(false, rx.is_empty());
+
+        rx.try_dequeue().unwrap();
+        assert_eq!(true, rx.is_empty());
+    }
+
+    #[test]
+    fn is_full() {
+        let (mut rx, mut tx) = queue::<usize>(1);
+
+        assert_eq!(false, tx.is_full());
+
+        tx.try_enqueue(13).unwrap();
+        assert_eq!(true, tx.is_full());
+
+        rx.try_dequeue().unwrap();
+        assert_eq!(false, tx.is_full());
     }
 }

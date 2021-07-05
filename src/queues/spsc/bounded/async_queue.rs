@@ -7,7 +7,7 @@ use crate::queues::spsc::{DequeueError, EnqueueError};
 use super::{BoundedReceiver, BoundedSender};
 
 /// An async variant of the [`BoundedSender`] that allows your to efficiently
-/// use this in async Contexts as well.
+/// use this Queue in async Contexts as well.
 ///
 /// Created using the [`async_queue`] method
 pub struct AsyncBoundedSender<T> {
@@ -17,7 +17,7 @@ pub struct AsyncBoundedSender<T> {
 }
 
 /// An async variant of the [`BoundedReceiver`] that allows your to efficiently
-/// use this in async Contexts as well.
+/// use this Queue in async Contexts as well.
 ///
 /// Created using the [`async_queue`] method
 pub struct AsyncBoundedReceiver<T> {
@@ -26,22 +26,44 @@ pub struct AsyncBoundedReceiver<T> {
     queue: BoundedReceiver<T>,
 }
 
-/// The Future returned when attempting to enqueue an Item
+/// The Future returned when enqueueing an Item
+///
+/// # Behaviour
+/// This Future only resolves when it either successfully enqueued the Item
+/// in the Queue (`Ok`) or when the Queue gets closed by the Consumer and
+/// therefore no more Items can be enqueued into it (`Err`)
 pub struct EnqueueFuture<'queue, T> {
+    /// The Waker to notify a potential waiting Dequeue-Operation
     rx_waker: &'queue AtomicWaker,
+    /// The Waker for this type of Future
     tx_waker: &'queue AtomicWaker,
+    /// The actual underlying Queue
     queue: &'queue mut BoundedSender<T>,
+    /// The Data that the User wants to enqueue
     data: Option<T>,
 }
 
-/// The Future returned when attempting to dequeue an Item
+/// The Future returned when dequeue an Item
+///
+/// # Behaviour
+/// This Future only resolves when it either successfully dequeued an Item
+/// and then returns it (`Ok(item)`) or when the Queue was closed by the Producer
+/// and there are no more Items left in it to be dequeued (`Err`)
 pub struct DequeueFuture<'queue, T> {
+    /// The Waker for this type of Future
     rx_waker: &'queue AtomicWaker,
+    /// The Waker to notify a potential waiting Enqueue-Operation
     tx_waker: &'queue AtomicWaker,
+    /// The actual underlying Queue
     queue: &'queue mut BoundedReceiver<T>,
 }
 
 impl<T> AsyncBoundedSender<T> {
+    /// Checks if the Queue has been closed by the Consumer
+    pub fn is_closed(&self) -> bool {
+        self.queue.is_closed()
+    }
+
     /// The async variant of the blocking [`enqueue`](BoundedSender::enqueue)
     /// operation on the Non-Async version of the Queue
     pub fn enqueue<'queue>(&'queue mut self, data: T) -> EnqueueFuture<'queue, T> {
@@ -55,8 +77,8 @@ impl<T> AsyncBoundedSender<T> {
 
     /// Attempts to enqueue the given Data on the Queue.
     ///
-    /// This behaves just like the non-async
-    /// [`try_enqueue`](BoundedSender::try_enqueue) operation
+    /// This behaves just like the [`try_enqueue`](BoundedSender::try_enqueue)
+    /// operation on the normal sync-BoundedSender
     pub fn try_enqueue(&mut self, data: T) -> Result<(), (T, EnqueueError)> {
         match self.queue.try_enqueue(data) {
             Ok(_) => {
@@ -65,6 +87,11 @@ impl<T> AsyncBoundedSender<T> {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// Checks if the Queue is currently Full
+    pub fn is_full(&self) -> bool {
+        self.queue.is_full()
     }
 }
 
@@ -75,6 +102,16 @@ impl<T> Debug for AsyncBoundedSender<T> {
 }
 
 impl<T> AsyncBoundedReceiver<T> {
+    /// Checks if the Queue has been closed by the Producer
+    ///
+    /// # Note
+    /// Even when this indicates that the Queue is closed, there might still be
+    /// Items left in the Queue that the Consumer should dequeue first to make
+    /// sure that no data is lost
+    pub fn is_closed(&self) -> bool {
+        self.queue.is_closed()
+    }
+
     /// The async variant of the blocking [`dequeue`](BoundedReceiver::dequeue)
     /// operation on the Non-Async version of the Queue
     pub fn dequeue<'queue>(&'queue mut self) -> DequeueFuture<'queue, T> {
@@ -97,6 +134,11 @@ impl<T> AsyncBoundedReceiver<T> {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// Checks if the Queue is currently Empty
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty()
     }
 }
 

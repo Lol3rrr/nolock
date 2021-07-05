@@ -48,7 +48,18 @@ pub struct UnboundedSender<T> {
 }
 
 impl<T> UnboundedSender<T> {
-    /// Checks if the current Queue has been closed
+    /// Checks if the Queue has been closed by the Consumer
+    ///
+    /// # Example
+    /// ```
+    /// # use nolock::queues::spsc::unbounded;
+    /// let (rx, tx) = unbounded::queue::<usize>();
+    ///
+    /// // Drop the Consumer and therefore also close the Queue
+    /// drop(rx);
+    ///
+    /// assert_eq!(true, tx.is_closed());
+    /// ```
     pub fn is_closed(&self) -> bool {
         self.closed.load(atomic::Ordering::Acquire)
     }
@@ -66,6 +77,29 @@ impl<T> UnboundedSender<T> {
     }
 
     /// Enqueues the Data
+    ///
+    /// # Example
+    /// Normal Enqueue, where the Queue is not closed
+    /// ```
+    /// # use nolock::queues::spsc::unbounded;
+    /// let (rx, mut tx) = unbounded::queue::<usize>();
+    ///
+    /// assert_eq!(Ok(()), tx.enqueue(13));
+    ///
+    /// # drop(rx);
+    /// ```
+    ///
+    /// Failed Enqueue, the Queue has been closed
+    /// ```
+    /// # use nolock::queues::spsc::unbounded;
+    /// # use nolock::queues::spsc::EnqueueError;
+    /// let (rx, mut tx) = unbounded::queue::<usize>();
+    ///
+    /// // Drop the Consumer and therefore also close the Queue
+    /// drop(rx);
+    ///
+    /// assert_eq!(Err((13, EnqueueError::Closed)), tx.enqueue(13));
+    /// ```
     pub fn enqueue(&mut self, data: T) -> Result<(), (T, EnqueueError)> {
         if self.is_closed() {
             return Err((data, EnqueueError::Closed));
@@ -125,12 +159,45 @@ pub struct UnboundedReceiver<T> {
 }
 
 impl<T> UnboundedReceiver<T> {
-    /// Checks if the current Queue has been closed
+    /// Checks if the Queue has been closed by the Producer
+    ///
+    /// # Example
+    /// ```
+    /// # use nolock::queues::spsc::unbounded;
+    /// let (rx, tx) = unbounded::queue::<usize>();
+    ///
+    /// // Dropping the Producer and therefore closing the Queue
+    /// drop(tx);
+    ///
+    /// assert_eq!(true, rx.is_closed());
+    /// ```
     pub fn is_closed(&self) -> bool {
         self.buf_r.is_closed() && !self.inuse_recv.has_next()
     }
 
     /// Attempts to dequeue a single Element from the Queue
+    ///
+    /// # Example
+    /// Successful Dequeue
+    /// ```
+    /// # use nolock::queues::spsc::unbounded;
+    /// let (mut rx, mut tx) = unbounded::queue::<usize>();
+    ///
+    /// tx.enqueue(13).unwrap();
+    ///
+    /// assert_eq!(Ok(13), rx.try_dequeue());
+    /// ```
+    ///
+    /// Dequeue on empty Queue
+    /// ```
+    /// # use nolock::queues::spsc::unbounded;
+    /// # use nolock::queues::spsc::DequeueError;
+    /// let (mut rx, mut tx) = unbounded::queue::<usize>();
+    ///
+    /// assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
+    ///
+    /// # drop(tx);
+    /// ```
     pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
         // Attempt to Dequeue an element from the current BoundedQueue
         match self.buf_r.try_dequeue() {

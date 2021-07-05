@@ -60,7 +60,7 @@ pub struct Receiver<T> {
 }
 
 impl<T> Sender<T> {
-    /// Checks if the Queue has been closed by either Side
+    /// Checks if the Queue has been closed by the Consumer
     ///
     /// # Example:
     /// ```
@@ -181,7 +181,14 @@ impl<T> Drop for Sender<T> {
 }
 
 impl<T> Receiver<T> {
-    /// Checks if the Queue has been closed by either Side
+    /// Checks if the Queue has been closed by the Producers
+    ///
+    /// # Note
+    /// Even when this method indicates that the Queue has been closed, there
+    /// may still be Elements left in the Queue and therefore you should
+    /// attempt to dequeue the next Element and only when you get back an Error
+    /// with [`DequeueError::Closed`] can you be sure that there is nothing
+    /// left in the Queue and you can savely discard it.
     ///
     /// # Example:
     /// ```
@@ -200,6 +207,9 @@ impl<T> Receiver<T> {
 
     /// Loads the current Head of the Buffer-List
     fn load_head_of_queue(&self) -> ManuallyDrop<Box<BufferList<T>>> {
+        // This is save to do, because the BufferList will only be deallocated
+        // by the Receiver and therefore the Ptr we currently hold will never
+        // be deallocated until we have a new one to switch to.
         let ptr = self.head_of_queue;
         ManuallyDrop::new(unsafe { Box::from_raw(ptr as *mut BufferList<T>) })
     }
@@ -420,12 +430,24 @@ impl<T> Receiver<T> {
     /// This is a simple blocking dequeue. This is definetly not lock free
     /// anymore and will simply spin and try to dequeue an item over and over
     /// again.
+    ///
+    /// # Behaviour
+    /// This function will block until it either successfully dequeues an item
+    /// from the Queue and will then return `Some(data)` or until the Queue has
+    /// been closed by the other Side, in which case it will return `None`
     pub fn dequeue(&mut self) -> Option<T> {
         loop {
+            // Attempt to Dequeue an item
             match self.try_dequeue() {
+                // We got some Item, so we should simply return that
                 Ok(d) => return Some(d),
+                // We got an error/no Item
                 Err(e) => match e {
+                    // If we had a simply error telling us that there is item
+                    // in the Queue, we should simply continue
                     DequeueError::WouldBlock => {}
+                    // If the Queue has been closed, there is nothing we could
+                    // retrieve in the Future and therefore we return None
                     DequeueError::Closed => return None,
                 },
             };

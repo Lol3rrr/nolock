@@ -24,12 +24,24 @@ pub struct AsyncUnboundedReceiver<T> {
 
 /// The Future returned by the
 /// [`dequeue`](AsyncUnboundedReceiver::dequeue)-Operation
+///
+/// # Behaviour
+/// This Future only resolves when it either successfully dequeued an Element
+/// and then returns it as `Ok(Element)` or when the Queue has been closed by
+/// the Producer and the Queue is currently empty, therefore no more Elements
+/// will be added to the Queue meaning that we would wait forever, instead it
+/// returns `Err(DequeueError)`
 pub struct DequeueFuture<'queue, T> {
     rx_waker: &'queue AtomicWaker,
     queue: &'queue mut UnboundedReceiver<T>,
 }
 
 impl<T> AsyncUnboundedSender<T> {
+    /// Checks if the Queue has been closed by the Consumer
+    pub fn is_closed(&self) -> bool {
+        self.queue.is_closed()
+    }
+
     /// Enqueues the given Data on the Queue
     pub fn enqueue(&mut self, data: T) -> Result<(), (T, EnqueueError)> {
         self.queue.enqueue(data)?;
@@ -45,6 +57,11 @@ impl<T> Debug for AsyncUnboundedSender<T> {
 }
 
 impl<T> AsyncUnboundedReceiver<T> {
+    /// Checks if the Queue has been closed by the Producer
+    pub fn is_closed(&self) -> bool {
+        self.queue.is_closed()
+    }
+
     /// Dequeues the next Item from the Queue
     pub fn dequeue<'queue>(&'queue mut self) -> DequeueFuture<'queue, T> {
         DequeueFuture {

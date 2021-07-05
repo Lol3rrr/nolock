@@ -5,7 +5,7 @@ use crate::queues::mpsc::{DequeueError, EnqueueError};
 
 use super::{queue, Receiver, Sender};
 
-/// This is simply the asynchronous Version of the [`Jiffy-Receiver`](Receiver)
+/// This is the asynchronous Version of the [`Jiffy-Receiver`](Receiver)
 pub struct AsyncReceiver<T> {
     /// The shared Waker to inform this receiver of any newly enqueued items
     waker: Arc<AtomicWaker>,
@@ -13,7 +13,7 @@ pub struct AsyncReceiver<T> {
     queue: Receiver<T>,
 }
 
-/// This is simply the asynchronous Version of the [`Jiffy-Sender`](Sender)
+/// This is the asynchronous Version of the [`Jiffy-Sender`](Sender)
 pub struct AsyncSender<T> {
     /// The shared Waker to wake up the Receiver if it is still waiting for
     /// an new Item to be enqueued
@@ -23,7 +23,14 @@ pub struct AsyncSender<T> {
 }
 
 impl<T> AsyncReceiver<T> {
-    /// Checks if the current Queue has been closed by either side
+    /// Checks if the current Queue has been closed by the Producer
+    ///
+    /// # Note
+    /// This does not mean, that there are no more Elements in the Queue
+    /// currently.
+    /// It only indicates that there will be no new Elements inserted into the
+    /// Queue, but there might still be a any number of Elements currently
+    /// still left in the Queue.
     pub fn is_closed(&self) -> bool {
         self.queue.is_closed()
     }
@@ -39,6 +46,30 @@ impl<T> AsyncReceiver<T> {
 
     /// This is the asynchronous version of the blocking
     /// [`dequeue`](Receiver::dequeue) operation on the normal Jiffy-Queue
+    ///
+    /// # Behaviour
+    /// The Future returned, will either resolve once an item is ready to be
+    /// dequeued (`Ok`) or the Queue encountered a "fatal" error, like when the other
+    /// side closes the Queue (`Err`)
+    ///
+    /// # Example
+    /// ```
+    /// # use nolock::queues::mpsc::jiffy;
+    ///
+    /// async fn demo() {
+    ///   let (mut rx, tx) = jiffy::async_queue::<usize>();
+    ///
+    ///   tx.enqueue(13).unwrap();
+    ///
+    ///   assert_eq!(Ok(13), rx.dequeue().await);
+    /// }
+    ///
+    /// # fn main() {
+    /// #   let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    /// #
+    /// #   rt.block_on(demo());
+    /// # }
+    /// ```
     pub fn dequeue<'queue>(&'queue mut self) -> DequeueFuture<'queue, T> {
         // Return the right DequeueFuture
         DequeueFuture {
@@ -56,6 +87,12 @@ impl<T> Debug for AsyncReceiver<T> {
 
 /// This is the Future returend by the [`Dequeue`](AsyncReceiver::<T>::dequeue)
 /// operation on the [`AsyncReceiver`]
+///
+/// # Behaviour
+/// The Future only resolves when it managed to successfully dequeue an Element
+/// from the Queue, which will then return `Ok(data)`, or if it encountered a
+/// "fatal" [`DequeueError`], like when the Queue has been closed, which will
+/// then resolve to `Err(DequeueError)`.
 pub struct DequeueFuture<'queue, T> {
     /// This is the Waker on which we will be notified in case the Sender will
     /// enqueue a new Item in the Queue
@@ -98,7 +135,32 @@ impl<'queue, T> Debug for DequeueFuture<'queue, T> {
 }
 
 impl<T> AsyncSender<T> {
+    /// Checks if the Queue has been closed by the Consumer
+    pub fn is_closed(&self) -> bool {
+        self.queue.is_closed()
+    }
+
     /// Enqueues the given Data
+    ///
+    /// # Example:
+    /// ```
+    /// # use nolock::queues::mpsc::jiffy;
+    ///
+    /// async fn demo() {
+    ///   let (mut rx, tx) = jiffy::async_queue::<usize>();
+    ///
+    ///   // Enqueue the given Data
+    ///   assert_eq!(Ok(()), tx.enqueue(13));
+    ///   
+    ///   # assert_eq!(Ok(13), rx.dequeue().await);
+    /// }
+    ///
+    /// # fn main() {
+    /// #   let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    /// #
+    /// #   rt.block_on(demo());
+    /// # }
+    /// ```
     pub fn enqueue(&self, data: T) -> Result<(), (T, EnqueueError)> {
         // Enqueue the Data on the underlying Queue itself
         self.queue.enqueue(data)?;
