@@ -59,6 +59,35 @@ pub struct Receiver<T> {
     head_of_queue: *const BufferList<T>,
 }
 
+/// This function is responsible for properly closing the Queue and depending
+/// on the Situation, cleaning up all the Data that is still left to be cleaned
+/// up
+fn close_side<T, F>(closed: &atomic::AtomicBool, get_ptr: F)
+where
+    F: Fn() -> *mut BufferList<T>,
+{
+    // Attempt to "CAS" the closed value, assuming that the other side was
+    // not already closed, hence setting `current` to `false`
+    match closed.compare_exchange(
+        false,
+        true,
+        atomic::Ordering::SeqCst,
+        atomic::Ordering::SeqCst,
+    ) {
+        // The Other side is still open and therefore we dont have to do
+        // anything else and can just exit
+        Ok(_) => {}
+        // The Other side is already closed, so now we are the last one
+        // that has access to the Queue and therefore it our job to
+        // properly clean up all the shared State, before we can also
+        // exit
+        Err(_) => {
+            let buffer_list_ptr = get_ptr();
+            BufferList::deallocate_all(buffer_list_ptr);
+        }
+    };
+}
+
 impl<T> Sender<T> {
     /// Checks if the Queue has been closed by the Consumer
     ///
@@ -176,7 +205,9 @@ impl<T> Debug for Sender<T> {
 
 impl<T> Drop for Sender<T> {
     fn drop(&mut self) {
-        self.closed.store(true, atomic::Ordering::Release);
+        close_side(&self.closed, || {
+            self.tail_of_queue.load(atomic::Ordering::Acquire)
+        });
     }
 }
 
@@ -219,7 +250,7 @@ impl<T> Receiver<T> {
     /// the List of Buffers
     fn move_to_next_buffer(&mut self) -> bool {
         // Load the current Buffer
-        let current_queue = self.load_head_of_queue();
+        let mut current_queue = self.load_head_of_queue();
 
         // If the current Queue has reached its end, we should attempt to
         // switch over to the next Buffer
@@ -236,14 +267,17 @@ impl<T> Receiver<T> {
                 return false;
             }
 
-            // Load the current Buffer
-            let previous = unsafe { Box::from_raw(self.head_of_queue as *mut BufferList<T>) };
-
             // Store the next Buffer as the current Buffer
             self.head_of_queue = next_ptr;
 
             // Drop and therefore free the previously current Buffer
-            drop(previous);
+            unsafe { ManuallyDrop::drop(&mut current_queue) };
+
+            // Set the new Heads previous PTR to null to indicate that there
+            // is no more valid Previous-BufferList.
+            // This is needed for the cleanup of the Queue after the fact
+            let mut next = self.load_head_of_queue();
+            next.previous = std::ptr::null();
         }
 
         true
@@ -468,7 +502,7 @@ impl<T> Debug for Receiver<T> {
 
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
-        self.closed.store(true, atomic::Ordering::Release);
+        close_side(&self.closed, || self.head_of_queue as *mut BufferList<T>);
     }
 }
 

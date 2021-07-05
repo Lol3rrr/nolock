@@ -228,6 +228,23 @@ impl<T> BufferList<T> {
             }
         };
     }
+
+    /// This function is responsible for deallocating the BufferList pointed to
+    /// by the given Ptr, as well as all the previous BufferLists, by walking
+    /// the entire Chain of BufferLists
+    pub fn deallocate_all(ptr: *mut Self) {
+        // Get the current BufferList from the given Ptr
+        let boxed = unsafe { Box::from_raw(ptr) };
+        // If the current BufferList has a previous Entry, clean that up first
+        if !boxed.previous.is_null() {
+            // Recursively call itself with the previous BufferList in the
+            // Chain
+            Self::deallocate_all(boxed.previous as *mut Self);
+        }
+
+        // Dropping the Boxed-BufferList will properly deallocate it
+        drop(boxed);
+    }
 }
 
 impl<T> Debug for BufferList<T> {
@@ -245,6 +262,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn folding_success() {
         let tail_ptr = atomic::AtomicPtr::new(0 as *mut BufferList<u32>);
 
@@ -282,7 +300,7 @@ mod tests {
         first_list.allocate_next(first_list_ptr, &tail_ptr);
 
         let second_list_ptr = first_list.next.load(atomic::Ordering::SeqCst);
-        let second_list = ManuallyDrop::new(unsafe { Box::from_raw(second_list_ptr) });
+        let mut second_list = ManuallyDrop::new(unsafe { Box::from_raw(second_list_ptr) });
 
         assert_eq!(true, second_list.fold().is_none());
 
@@ -291,9 +309,12 @@ mod tests {
             first_list.next.load(atomic::Ordering::SeqCst)
         );
         assert_eq!(first_list_ptr, second_list.previous as *mut BufferList<u32>);
+
+        unsafe { ManuallyDrop::drop(&mut second_list) };
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn scan() {
         let raw_list = BufferList::boxed(0 as *const BufferList<u32>, 0);
         let raw_list_ptr = Box::into_raw(raw_list);
