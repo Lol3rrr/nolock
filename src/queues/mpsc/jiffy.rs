@@ -24,7 +24,7 @@ use std::{
 };
 
 /// The Size of each Buffer in the "BufferList"
-const BUFFER_SIZE: usize = 256;
+const BUFFER_SIZE: usize = 1024;
 
 mod node;
 use node::NodeState;
