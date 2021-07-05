@@ -140,47 +140,6 @@ impl<T> BufferList<T> {
         (tmp_head_of_queue, Some(tmp_head))
     }
 
-    // TODO
-    // This part was originally planed to also be included in this implementation of the Queue,
-    // but in the End was not done, as it caused some problems and it does not seem to be
-    // needed in most cases
-    #[allow(dead_code)]
-    pub fn rescan(
-        head_of_queue_ptr: *mut BufferList<T>,
-        mut temp_head_of_queue: ManuallyDrop<Box<BufferList<T>>>,
-        mut temp_head: usize,
-    ) -> (ManuallyDrop<Box<BufferList<T>>>, usize) {
-        let mut scan_head_of_queue = ManuallyDrop::new(unsafe { Box::from_raw(head_of_queue_ptr) });
-
-        let mut scan_head = scan_head_of_queue.head;
-        loop {
-            if scan_head_of_queue.position_in_queue == temp_head_of_queue.position_in_queue
-                && scan_head >= temp_head - 1
-            {
-                break;
-            }
-
-            if scan_head >= BUFFER_SIZE {
-                let scan_next_ptr = scan_head_of_queue.next.load(atomic::Ordering::Acquire);
-                scan_head_of_queue = ManuallyDrop::new(unsafe { Box::from_raw(scan_next_ptr) });
-                scan_head = scan_head_of_queue.head;
-            }
-
-            let scan_n = scan_head_of_queue.buffer.get(scan_head).unwrap();
-
-            if NodeState::Set == scan_n.get_state() {
-                temp_head = scan_head;
-                temp_head_of_queue = scan_head_of_queue;
-                scan_head_of_queue = ManuallyDrop::new(unsafe { Box::from_raw(head_of_queue_ptr) });
-                scan_head = scan_head_of_queue.head;
-            }
-
-            scan_head += 1;
-        }
-
-        (temp_head_of_queue, temp_head)
-    }
-
     /// This attempts to allocate a new BufferList and store it as the next-Ptr for
     /// this Buffer as well as storing it as the new Tail-Of-Queue
     pub fn allocate_next(&self, self_ptr: *mut Self, tail_of_queue: &atomic::AtomicPtr<Self>) {
