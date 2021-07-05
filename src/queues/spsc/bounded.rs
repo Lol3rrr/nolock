@@ -123,7 +123,7 @@ impl<T> BoundedSender<T> {
 
         // Get a reference to the current Entry where we would enqueue the next
         // Element
-        let buffer_entry = &self.buffer[self.head];
+        let buffer_entry = unsafe { self.buffer.get_unchecked(self.head) };
 
         // If the Node is already set, that means we don't have anywhere to
         // store the new Element, meaning that the Buffer is full and we should
@@ -236,7 +236,7 @@ impl<T> BoundedReceiver<T> {
     /// ```
     pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
         // Get the Node where would read the next Item from
-        let buffer_entry = &self.buffer[self.tail];
+        let buffer_entry = unsafe { self.buffer.get_unchecked(self.tail) };
 
         // If the Node is not set, we should return an Error as the Queue is
         // empty and there is nothing for us to return in this Operation

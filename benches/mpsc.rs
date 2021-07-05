@@ -7,7 +7,11 @@ use std::{
 use criterion::{black_box, Criterion, Throughput};
 
 pub fn jiffy_enqueue_dequeue(ctx: &mut Criterion) {
-    ctx.bench_function("mpsc-jiffy-enqueue-dequeue", |b| {
+    let mut group = ctx.benchmark_group("mpsc-jiffy");
+
+    group.throughput(Throughput::Elements(2));
+
+    group.bench_function("enqueue-dequeue", |b| {
         let (mut rx, tx) = nolock::queues::mpsc::jiffy::queue::<u64>();
 
         b.iter(|| {
@@ -18,7 +22,11 @@ pub fn jiffy_enqueue_dequeue(ctx: &mut Criterion) {
 }
 
 pub fn std_enqueue_dequeue(ctx: &mut Criterion) {
-    ctx.bench_function("mpsc-std-enqueue-dequeue", |b| {
+    let mut group = ctx.benchmark_group("mpsc-std");
+
+    group.throughput(Throughput::Elements(2));
+
+    group.bench_function("enqueue-dequeue", |b| {
         let (tx, rx) = std::sync::mpsc::channel::<u64>();
 
         b.iter(|| {

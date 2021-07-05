@@ -1,7 +1,11 @@
-use criterion::Criterion;
+use criterion::{Criterion, Throughput};
 
 pub fn spsc_unbounded_queue_inserts(ctx: &mut Criterion) {
-    ctx.bench_function("spsc-unbounded-enqueue-dequeue", |b| {
+    let mut group = ctx.benchmark_group("spsc-unbounded-queue");
+
+    group.throughput(Throughput::Elements(2));
+
+    group.bench_function("enqueue-dequeue", |b| {
         let (mut rx, mut tx) = nolock::queues::spsc::unbounded::queue();
         b.iter(|| {
             let _ = tx.enqueue(13);
@@ -11,7 +15,11 @@ pub fn spsc_unbounded_queue_inserts(ctx: &mut Criterion) {
 }
 
 pub fn bounded_enqueue_dequeue(ctx: &mut Criterion) {
-    ctx.bench_function("spsc-bounded-enqueue-dequeue", |b| {
+    let mut group = ctx.benchmark_group("spsc-bounded-queue");
+
+    group.throughput(Throughput::Elements(2));
+
+    group.bench_function("enqueue-dequeue", |b| {
         let (mut rx, mut tx) = nolock::queues::spsc::bounded::queue(16);
         b.iter(|| {
             assert_eq!(Ok(()), tx.try_enqueue(13));
