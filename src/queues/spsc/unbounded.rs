@@ -71,7 +71,7 @@ impl<T> UnboundedSender<T> {
         let (rx, tx) = bounded::queue(self.buffer_size);
         // Sends the Receiving half of the newly created BoundedQueue to the
         // Consumer half
-        self.inuse_sender.enqueue(rx);
+        self.inuse_sender.enqueue(rx).unwrap();
         // Return the sending Half to the caller
         tx
     }

@@ -2,7 +2,7 @@
 #![warn(rust_2018_idioms, missing_debug_implementations)]
 //! This crate provides a set of Lock-Free algorithms and Datastructures
 //!
-//! # Features
+//! # Feature-Flags
 //! * `hash_trie`: Enables the Hash-Trie-Map implementation
 //! * `hazard_ptr`: Enables the Hazard-Ptr implementation
 //! * `queues`: Enables all the Queues

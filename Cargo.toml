@@ -2,6 +2,13 @@
 name = "nolock"
 version = "0.1.0"
 edition = "2018"
+authors = ["Lol3r <lol3r@lol3r.net>"]
+description = "A collection of Lock-Free Datastructures"
+readme = "README.md"
+repository = "https://github.com/Lol3rrr/nolock"
+license = "MIT OR Apache-2.0"
+keywords = ["lock-free"]
+categories = ["concurrency", "data-structures"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

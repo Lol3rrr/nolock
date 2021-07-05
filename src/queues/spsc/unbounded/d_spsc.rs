@@ -225,7 +225,7 @@ mod tests {
     fn enqueue_dequeue() {
         let (mut rx, mut tx) = unbounded_basic_queue();
 
-        tx.enqueue(13);
+        tx.enqueue(13).unwrap();
         assert_eq!(Ok(13), rx.try_dequeue());
     }
     #[test]
@@ -233,7 +233,7 @@ mod tests {
         let (mut rx, mut tx) = unbounded_basic_queue();
 
         assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
-        tx.enqueue(13);
+        tx.enqueue(13).unwrap();
         assert_eq!(Ok(13), rx.try_dequeue());
         assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
     }
@@ -241,20 +241,20 @@ mod tests {
     fn multiple_enqueue_dequeue() {
         let (mut rx, mut tx) = unbounded_basic_queue();
 
-        tx.enqueue(13);
+        tx.enqueue(13).unwrap();
         assert_eq!(Ok(13), rx.try_dequeue());
-        tx.enqueue(14);
+        tx.enqueue(14).unwrap();
         assert_eq!(Ok(14), rx.try_dequeue());
-        tx.enqueue(15);
+        tx.enqueue(15).unwrap();
         assert_eq!(Ok(15), rx.try_dequeue());
     }
     #[test]
     fn multiple_enqueue_dequeue_2() {
         let (mut rx, mut tx) = unbounded_basic_queue();
 
-        tx.enqueue(13);
-        tx.enqueue(14);
-        tx.enqueue(15);
+        tx.enqueue(13).unwrap();
+        tx.enqueue(14).unwrap();
+        tx.enqueue(15).unwrap();
         assert_eq!(Ok(13), rx.try_dequeue());
         assert_eq!(Ok(14), rx.try_dequeue());
         assert_eq!(Ok(15), rx.try_dequeue());
