@@ -193,7 +193,6 @@ where
                     atomic::Ordering::SeqCst,
                 ) {
                     Ok(_) => {
-                        println!("Insert Worked");
                         return;
                     }
                     Err(_) => {
@@ -207,14 +206,12 @@ where
         match bucket.load::<B>(&mut bucket_guard) {
             // Bucket already contains a Node
             None => {
-                println!("Bucket has Entry");
                 self.adjust_node_on_chain(n, bucket_guard, 1);
             }
             // Bucket points to a second HashLevel so we should
             // try and adjust the Node "onto" the newly found
             // HashLevel
             Some((r, _)) => {
-                println!("Bucket has HashLevel");
                 r.adjust_node_on_hash(n);
             }
         };
@@ -246,7 +243,8 @@ where
         let mut bucket_guard = hazard_ptr::empty_guard();
 
         // If the
-        if let Some((_, bucket_ptr)) = bucket.load(&mut bucket_guard) {
+        if let mptr::PtrType::HashLevel(bucket_ptr) = bucket.load_ptr(atomic::Ordering::Acquire) {
+            let bucket_ptr = bucket_ptr as *mut Self;
             if bucket_ptr == self.own as *mut Self {
                 let n_ptr = Box::into_raw(ManuallyDrop::into_inner(new_entry));
                 let cas_ptr = mptr::mark_as_previous(self.own as *const u8) as *mut Entry<K, V>;
@@ -291,8 +289,8 @@ where
 
         let mut bucket_guard = hazard_ptr::empty_guard();
 
-        if let Some((_, bucket_ptr)) = bucket.load(&mut bucket_guard) {
-            if bucket_ptr == self.own as *mut Self {
+        if let mptr::PtrType::HashLevel(h_ptr) = bucket.load_ptr(atomic::Ordering::Acquire) {
+            if h_ptr as *mut Self == self.own as *mut Self {
                 return None;
             }
         }
@@ -448,6 +446,14 @@ where
             };
         }
         Ok(())
+    }
+}
+
+impl<K, V, const B: u8> Drop for HashLevel<K, V, B> {
+    fn drop(&mut self) {
+        for bucket in self.buckets.iter_mut() {
+            bucket.clean_up::<B>(self.own as *mut ());
+        }
     }
 }
 

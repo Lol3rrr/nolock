@@ -5,6 +5,11 @@ use std::{mem::ManuallyDrop, sync::atomic};
 
 pub(crate) struct TargetPtr<K, V>(atomic::AtomicPtr<Entry<K, V>>);
 
+pub(crate) enum PtrType {
+    Entry(*mut ()),
+    HashLevel(*mut ()),
+}
+
 impl<K, V> TargetPtr<K, V> {
     pub fn new_hashlevel<const B: u8>(ptr: *mut HashLevel<K, V, B>) -> Self {
         let marked = mark_as_previous(ptr as *const u8) as *mut Entry<K, V>;
@@ -13,6 +18,15 @@ impl<K, V> TargetPtr<K, V> {
 
     pub fn raw_load(&self, order: atomic::Ordering) -> *mut () {
         self.0.load(order) as *mut ()
+    }
+
+    pub fn load_ptr(&self, order: atomic::Ordering) -> PtrType {
+        let ptr = self.0.load(order);
+        if is_entry(ptr as *const u8) {
+            PtrType::Entry(to_actual_ptr(ptr as *const u8) as *mut ())
+        } else {
+            PtrType::HashLevel(to_actual_ptr(ptr as *const u8) as *mut ())
+        }
     }
 
     pub fn load<const B: u8>(
@@ -61,13 +75,33 @@ impl<K, V> TargetPtr<K, V> {
         let marked = mark_as_entry(new as *const u8) as *mut Entry<K, V>;
         self.0.compare_exchange(current, marked, success, failure)
     }
+
+    pub fn clean_up<const B: u8>(&mut self, own_lvl_ptr: *mut ()) {
+        let ptr = self.0.load(atomic::Ordering::Acquire) as *const u8;
+        if is_entry(ptr) {
+            let ptr = to_actual_ptr(ptr);
+
+            hazard_ptr::retire(ptr as *mut (), |ptr| {
+                let boxed = unsafe { Box::from_raw(ptr as *mut Entry<K, V>) };
+                drop(boxed);
+            });
+        } else {
+            let ptr = to_actual_ptr(ptr);
+            if ptr as *mut () == own_lvl_ptr {
+                return;
+            }
+
+            let boxed = unsafe { Box::from_raw(ptr as *mut HashLevel<K, V, B>) };
+            drop(boxed);
+        }
+    }
 }
 
 pub(crate) fn boxed_hashlevel<K, V, const B: u8>(
     ptr: *mut HashLevel<K, V, B>,
 ) -> ManuallyDrop<Box<HashLevel<K, V, B>>> {
-    let boxed = unsafe { Box::from_raw(ptr) };
-    ManuallyDrop::new(boxed)
+    let inner = unsafe { Box::from_raw(ptr) };
+    ManuallyDrop::new(inner)
 }
 pub(crate) fn boxed_entry<K, V>(ptr: *mut Entry<K, V>) -> ManuallyDrop<Box<Entry<K, V>>> {
     let boxed = unsafe { Box::from_raw(ptr) };

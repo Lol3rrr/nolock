@@ -57,12 +57,19 @@ macro_rules! create_hazard_domain {
     ($domain_name:ident) => {
         mod $domain_name {
             use crate::hazard_ptr::{Domain, DomainGlobal, Guard};
-            use std::{cell::RefCell, sync::atomic};
+            use std::{
+                cell::RefCell,
+                sync::{atomic, Arc},
+            };
 
-            static SUB_GLOBAL: DomainGlobal = DomainGlobal::new();
+            use lazy_static::lazy_static;
+
+            lazy_static! {
+                static ref SUB_GLOBAL: Arc<DomainGlobal> = Arc::new(DomainGlobal::new());
+            }
 
             thread_local! {
-                static SUB_DOMAIN: RefCell<Domain> = RefCell::new(Domain::new(&SUB_GLOBAL, 10));
+                static SUB_DOMAIN: RefCell<Domain> = RefCell::new(Domain::new(SUB_GLOBAL.clone(), 10));
             }
 
             /// This functions protects whatever memory address is stored in

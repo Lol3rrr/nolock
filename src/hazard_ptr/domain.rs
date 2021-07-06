@@ -13,7 +13,7 @@ use super::{record::Record, retire_node::RetireNode, Guard};
 /// A Thread-Local instance to interact with a single Hazard-Pointer-Domain
 pub struct Domain {
     /// The Refernce to the Shared-Global State for the Hazard-Pointer-Domain
-    global: &'static DomainGlobal,
+    global: Arc<DomainGlobal>,
 
     record_sender: Arc<jiffy::Sender<*mut Record<()>>>,
     record_receiver: jiffy::Receiver<*mut Record<()>>,
@@ -39,12 +39,15 @@ impl Drop for Domain {
         // This should (at least try to) reclaim all the current
         // Elements in the R-List, as this would otherwise result
         // in a memory leak
+        for r_entry in self.r_list.drain(..) {
+            r_entry.retire();
+        }
     }
 }
 
 impl Domain {
     /// Creates a new Domain with the given shared Global and reclaim Threshold
-    pub fn new(global: &'static DomainGlobal, reclaim_threshold: usize) -> Self {
+    pub fn new(global: Arc<DomainGlobal>, reclaim_threshold: usize) -> Self {
         let (rx, tx) = jiffy::queue();
 
         Self {

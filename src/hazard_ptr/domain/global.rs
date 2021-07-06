@@ -96,3 +96,9 @@ impl DomainGlobal {
         }
     }
 }
+
+impl Drop for DomainGlobal {
+    fn drop(&mut self) {
+        println!("Dropped Global");
+    }
+}

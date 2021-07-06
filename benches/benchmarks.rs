@@ -1,10 +1,17 @@
 use criterion::{criterion_group, criterion_main};
 
+mod hash_trie;
 mod mpsc;
 mod spsc;
 
 criterion_group!(
-    benches,
+    maps,
+    hash_trie::hash_trie_inserts,
+    hash_trie::std_map_inserts
+);
+
+criterion_group!(
+    queues,
     spsc::spsc_unbounded_queue_inserts,
     spsc::bounded_enqueue_dequeue,
     mpsc::jiffy_enqueue_dequeue,
@@ -13,4 +20,4 @@ criterion_group!(
     mpsc::std_concurrent_enqueue,
 );
 
-criterion_main!(benches);
+criterion_main!(queues, maps);
