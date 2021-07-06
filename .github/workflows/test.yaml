@@ -32,4 +32,4 @@ jobs:
           rustup override set "$MIRI_NIGHTLY"
           rustup component add miri
       - name: Run Miri
-        run: cargo miri test queues
+        run: cargo miri test queues --features hash_trie
