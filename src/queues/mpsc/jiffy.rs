@@ -495,6 +495,18 @@ impl<T> Receiver<T> {
     }
 }
 
+mod owned_iter;
+pub use owned_iter::OwnedIter;
+
+impl<T> IntoIterator for Receiver<T> {
+    type Item = T;
+    type IntoIter = OwnedIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        OwnedIter::new(self)
+    }
+}
+
 // These are both save to manually implement because we would garantuee that
 // they are save to share across threads, because the algorithm garantuees it
 unsafe impl<T> Send for Receiver<T> {}
