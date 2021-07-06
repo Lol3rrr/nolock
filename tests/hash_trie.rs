@@ -1,8 +1,10 @@
 use std::{sync::Arc, thread, time::Duration};
 
+#[cfg(feature = "hash_trie")]
 use nolock::hash_trie::HashTrieMap;
 use rand::RngCore;
 
+#[cfg(feature = "hash_trie")]
 #[test]
 fn concurrent_reads_deletes() {
     let map = Arc::new(HashTrieMap::new());

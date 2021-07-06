@@ -12,7 +12,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Run tests
-      run: cargo test --features hash_trie
+      run: cargo test
   clippy:
     runs-on: ubuntu-latest
     steps:
@@ -32,4 +32,4 @@ jobs:
           rustup override set "$MIRI_NIGHTLY"
           rustup component add miri
       - name: Run Miri
-        run: cargo miri test queues --features hash_trie
+        run: cargo miri test queues 
