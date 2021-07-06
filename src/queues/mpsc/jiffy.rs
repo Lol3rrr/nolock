@@ -497,13 +497,23 @@ impl<T> Receiver<T> {
 
 mod owned_iter;
 pub use owned_iter::OwnedIter;
-
 impl<T> IntoIterator for Receiver<T> {
     type Item = T;
     type IntoIter = OwnedIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
         OwnedIter::new(self)
+    }
+}
+
+mod ref_iter;
+pub use ref_iter::RefIter;
+impl<'queue, T> IntoIterator for &'queue mut Receiver<T> {
+    type Item = T;
+    type IntoIter = RefIter<'queue, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        RefIter::new(self)
     }
 }
 
@@ -629,5 +639,19 @@ mod tests {
 
         assert_eq!(Ok(13), rx.try_dequeue());
         assert_eq!(Err(DequeueError::Closed), rx.try_dequeue());
+    }
+
+    #[test]
+    fn iter_mut() {
+        let (mut rx, tx) = queue::<usize>();
+
+        tx.enqueue(13).unwrap();
+        drop(tx);
+
+        let mut iter = (&mut rx).into_iter();
+        assert_eq!(Some(13), iter.next());
+        assert_eq!(None, iter.next());
+
+        assert_eq!(true, rx.is_closed());
     }
 }
