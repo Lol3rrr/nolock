@@ -493,6 +493,15 @@ impl<T> Receiver<T> {
             };
         }
     }
+
+    /// Returns a RefIter for the Queue, this allows you to still use the
+    /// Queue-Receiver once the Iterator has been dropped
+    pub fn iter_mut<'queue, 'iter>(&'queue mut self) -> RefIter<'iter, T>
+    where
+        'queue: 'iter,
+    {
+        self.into_iter()
+    }
 }
 
 mod owned_iter;
