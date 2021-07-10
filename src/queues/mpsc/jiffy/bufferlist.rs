@@ -53,7 +53,7 @@ impl<T> BufferList<T> {
     /// # Returns
     /// * `None`: If the current BufferList has no next-Entry.
     /// * `Some(next)`: The Next BufferList, the one following the given BufferList
-    fn fold(&self) -> Option<ManuallyDrop<Box<BufferList<T>>>> {
+    fn fold(&self) -> Option<*mut BufferList<T>> {
         let next_ptr = self.next.load(atomic::Ordering::Acquire);
         // This acts as both the check for whether or not this is the End of
         // the Buffers (line 42) as well as the check in line 47
@@ -61,13 +61,12 @@ impl<T> BufferList<T> {
             return None;
         }
 
-        let previous_ptr = self.previous;
+        let previous_ptr = self.previous as *mut Self;
 
-        let mut next = ManuallyDrop::new(unsafe { Box::from_raw(next_ptr) });
+        let next = unsafe { &mut *next_ptr };
         next.previous = previous_ptr;
 
-        let previous =
-            ManuallyDrop::new(unsafe { Box::from_raw(previous_ptr as *mut BufferList<T>) });
+        let previous = unsafe { &*previous_ptr };
         previous.next.store(next_ptr, atomic::Ordering::Release);
 
         Some(next)
@@ -79,16 +78,18 @@ impl<T> BufferList<T> {
     /// This functions returns the Some with the index of a Set node or
     /// returns None if no Set node could be found
     pub fn scan(
-        mut tmp_head_of_queue: ManuallyDrop<Box<BufferList<T>>>,
+        mut tmp_head_of_queue_ptr: *mut BufferList<T>,
         mut tmp_head: usize,
-    ) -> (ManuallyDrop<Box<BufferList<T>>>, Option<usize>) {
+    ) -> (*mut BufferList<T>, Option<usize>) {
+        let mut tmp_head_of_queue = unsafe { &*tmp_head_of_queue_ptr };
+
         let mut flag_move_to_new_buffer = false;
         let mut flag_buffer_all_handled = true;
 
         let mut tmp_n = {
             let n_ref = tmp_head_of_queue.buffer.get(tmp_head).unwrap();
             let n_ptr = n_ref as *const Node<T> as *mut Node<T>;
-            ManuallyDrop::new(unsafe { Box::from_raw(n_ptr) })
+            unsafe { &*n_ptr }
         };
 
         loop {
@@ -105,6 +106,7 @@ impl<T> BufferList<T> {
 
             if tmp_head >= BUFFER_SIZE {
                 if flag_buffer_all_handled && flag_move_to_new_buffer {
+                    /*
                     match tmp_head_of_queue.fold() {
                         Some(n_head_of_queue) => {
                             let old = std::mem::replace(&mut tmp_head_of_queue, n_head_of_queue);
@@ -116,15 +118,15 @@ impl<T> BufferList<T> {
                         }
                         None => return (tmp_head_of_queue, None),
                     };
+                    */
                 } else {
                     let next_ptr = tmp_head_of_queue.next.load(atomic::Ordering::Acquire);
                     if next_ptr.is_null() {
-                        return (tmp_head_of_queue, None);
+                        return (tmp_head_of_queue_ptr, None);
                     }
 
-                    let next = ManuallyDrop::new(unsafe { Box::from_raw(next_ptr) });
-
-                    tmp_head_of_queue = next;
+                    tmp_head_of_queue_ptr = next_ptr;
+                    tmp_head_of_queue = unsafe { &*tmp_head_of_queue_ptr };
                     tmp_head = tmp_head_of_queue.head;
                     flag_buffer_all_handled = true;
                     flag_move_to_new_buffer = true;
@@ -133,11 +135,11 @@ impl<T> BufferList<T> {
                 tmp_n = {
                     let n_ref = tmp_head_of_queue.buffer.get(tmp_head).unwrap();
                     let n_ptr = n_ref as *const Node<T> as *mut Node<T>;
-                    ManuallyDrop::new(unsafe { Box::from_raw(n_ptr) })
+                    unsafe { &*n_ptr }
                 };
             }
         }
-        (tmp_head_of_queue, Some(tmp_head))
+        (tmp_head_of_queue_ptr, Some(tmp_head))
     }
 
     /// This attempts to allocate a new BufferList and store it as the next-Ptr for
@@ -217,31 +219,35 @@ mod tests {
     use super::*;
 
     #[test]
-    #[cfg_attr(miri, ignore)]
     fn folding_success() {
         let tail_ptr = atomic::AtomicPtr::new(0 as *mut BufferList<u32>);
 
         let first_list = BufferList::boxed(0 as *const BufferList<u32>, 0);
         let first_list_ptr = Box::into_raw(first_list);
-        let first_list = unsafe { Box::from_raw(first_list_ptr) };
+        let first_list = unsafe { &*first_list_ptr };
 
         first_list.allocate_next(first_list_ptr, &tail_ptr);
 
         let second_list_ptr = first_list.next.load(atomic::Ordering::SeqCst);
-        let second_list = ManuallyDrop::new(unsafe { Box::from_raw(second_list_ptr) });
+        let second_list = unsafe { &*second_list_ptr };
 
         second_list.allocate_next(second_list_ptr, &tail_ptr);
         let third_list_ptr = second_list.next.load(atomic::Ordering::SeqCst);
-        let third_list = ManuallyDrop::new(unsafe { Box::from_raw(third_list_ptr) });
 
         let result_next = second_list.fold().unwrap();
+
+        let third_list = unsafe { &*third_list_ptr };
 
         assert_eq!(
             third_list_ptr,
             first_list.next.load(atomic::Ordering::SeqCst)
         );
         assert_eq!(first_list_ptr, third_list.previous as *mut BufferList<u32>);
-        assert_eq!(first_list_ptr, result_next.previous as *mut BufferList<u32>);
+        assert_eq!(third_list_ptr, result_next);
+
+        unsafe { Box::from_raw(first_list_ptr) };
+        unsafe { Box::from_raw(second_list_ptr) };
+        unsafe { Box::from_raw(third_list_ptr) };
     }
 
     #[test]
@@ -269,21 +275,18 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore)]
     fn scan() {
         let raw_list = BufferList::boxed(0 as *const BufferList<u32>, 0);
         let raw_list_ptr = Box::into_raw(raw_list);
 
-        let buffer_list = ManuallyDrop::new(unsafe { Box::from_raw(raw_list_ptr) });
+        let buffer_list = unsafe { &*raw_list_ptr };
         buffer_list.buffer.get(2).unwrap().store(13);
 
-        let (result_buffer, result_head) =
-            BufferList::scan(ManuallyDrop::new(unsafe { Box::from_raw(raw_list_ptr) }), 0);
+        let (result_buffer, result_head) = BufferList::scan(raw_list_ptr, 0);
 
-        assert_eq!(
-            buffer_list.position_in_queue,
-            result_buffer.position_in_queue
-        );
+        assert_eq!(raw_list_ptr, result_buffer);
         assert_eq!(Some(2), result_head);
+
+        unsafe { Box::from_raw(raw_list_ptr) };
     }
 }

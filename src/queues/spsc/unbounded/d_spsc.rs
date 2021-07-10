@@ -4,7 +4,6 @@ use super::super::{bounded, DequeueError};
 
 use std::{
     fmt::Debug,
-    mem::ManuallyDrop,
     sync::{atomic, Arc},
 };
 
@@ -54,12 +53,6 @@ impl<T> UnboundedSender<T> {
         }
     }
 
-    /// Loads the current Tail of the Queue
-    fn load_tail(&self) -> ManuallyDrop<Box<Node<T>>> {
-        let boxed = unsafe { Box::from_raw(self.tail) };
-        ManuallyDrop::new(boxed)
-    }
-
     /// Enqueues the given Data
     pub fn enqueue(&mut self, data: T) -> Result<(), T> {
         if self.closed.load(atomic::Ordering::Acquire) {
@@ -72,7 +65,7 @@ impl<T> UnboundedSender<T> {
         // Get a PTR to the node
         let node_ptr = Box::into_raw(node);
         // Load the current Tail to append the new Node to the end
-        let cur_tail = self.load_tail();
+        let cur_tail = unsafe { &*self.tail };
         // Actually append the new Node to the Tail
         cur_tail.next.store(node_ptr, atomic::Ordering::Release);
         // Stores the new Node as the current tail of the Queue
@@ -125,28 +118,31 @@ impl<T> UnboundedReceiver<T> {
     /// Attempts to dequeue a piece of Data
     pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
         // Loads the current Head of the Queue
-        let prev_head = unsafe { Box::from_raw(self.head) };
+        let prev_head = unsafe { &*self.head };
         // Loads the PTR to the next Element in the Queue
         let next_ptr = prev_head.next.load(atomic::Ordering::Acquire);
         // If the PTR is null, than the Queue is empty
         if next_ptr.is_null() {
-            // Forget the current Head, as we dont want to free it
-            std::mem::forget(prev_head);
             // Return the right error to indicate that there is currently
             // nothing to load
             return Err(DequeueError::WouldBlock);
         }
 
         // Load the next Entry
-        let mut next = ManuallyDrop::new(unsafe { Box::from_raw(next_ptr) });
+        let next = unsafe { &mut *next_ptr };
         // Take out the Data from the next Entry
         let data = next.data.take().unwrap();
+
+        let prev_head_ptr = self.head;
 
         // Replace the current Head with the next Element
         self.head = next_ptr;
 
         // Attempt to "recycle" the previous Head
-        if let Err((node, _)) = self.node_return.try_enqueue(prev_head) {
+        if let Err((node, _)) = self
+            .node_return
+            .try_enqueue(unsafe { Box::from_raw(prev_head_ptr) })
+        {
             // If the previous Head could not be reused, simply drop/free it
             drop(node);
         }
@@ -156,7 +152,7 @@ impl<T> UnboundedReceiver<T> {
 
     /// Checks if the Queue contains at least one more element to dequeue
     pub fn has_next(&self) -> bool {
-        let prev_head = ManuallyDrop::new(unsafe { Box::from_raw(self.head) });
+        let prev_head = unsafe { &*self.head };
         let next_ptr = prev_head.next.load(atomic::Ordering::Acquire);
 
         !next_ptr.is_null()

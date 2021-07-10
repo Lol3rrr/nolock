@@ -19,7 +19,6 @@
 
 use std::{
     fmt::Debug,
-    mem::ManuallyDrop,
     sync::{atomic, Arc},
 };
 
@@ -56,7 +55,7 @@ pub struct Receiver<T> {
     closed: Arc<atomic::AtomicBool>,
     /// This is a simply Ptr to the current Buffer from where items will be
     /// dequeued
-    head_of_queue: *const BufferList<T>,
+    head_of_queue: *mut BufferList<T>,
 }
 
 /// This function is responsible for properly closing the Queue and depending
@@ -141,7 +140,7 @@ impl<T> Sender<T> {
         // Get the current tail-buffer, where we would initially attempt to
         // insert the Element into
         let mut tmp_buffer_ptr = self.tail_of_queue.load(atomic::Ordering::Acquire);
-        let mut tmp_buffer = ManuallyDrop::new(unsafe { Box::from_raw(tmp_buffer_ptr) });
+        let mut tmp_buffer = unsafe { &*tmp_buffer_ptr };
 
         // Get the current End position of the received buffer
         let mut end = tmp_buffer.position_in_queue * BUFFER_SIZE;
@@ -163,7 +162,7 @@ impl<T> Sender<T> {
 
             // Load the new Tail of the Queue
             tmp_buffer_ptr = self.tail_of_queue.load(atomic::Ordering::Acquire);
-            tmp_buffer = ManuallyDrop::new(unsafe { Box::from_raw(tmp_buffer_ptr) });
+            tmp_buffer = unsafe { &*tmp_buffer_ptr };
 
             // Recalculate the current End of the new Tail-Buffer
             end = tmp_buffer.position_in_queue * BUFFER_SIZE;
@@ -180,7 +179,7 @@ impl<T> Sender<T> {
         while location < start {
             // Load the previous Buffer in regards to our current one
             tmp_buffer_ptr = tmp_buffer.previous as *mut BufferList<T>;
-            tmp_buffer = ManuallyDrop::new(unsafe { Box::from_raw(tmp_buffer_ptr) });
+            tmp_buffer = unsafe { &*tmp_buffer_ptr };
 
             last_buffer = false;
 
@@ -242,21 +241,13 @@ impl<T> Receiver<T> {
         self.closed.load(atomic::Ordering::Acquire)
     }
 
-    /// Loads the current Head of the Buffer-List
-    fn load_head_of_queue(&self) -> ManuallyDrop<Box<BufferList<T>>> {
-        // This is save to do, because the BufferList will only be deallocated
-        // by the Receiver and therefore the Ptr we currently hold will never
-        // be deallocated until we have a new one to switch to.
-        let ptr = self.head_of_queue;
-        ManuallyDrop::new(unsafe { Box::from_raw(ptr as *mut BufferList<T>) })
-    }
-
     /// Checks if the end of the current Buffer has been reached and if that
     /// is the case, we need to attempt to switch over to the next Buffer in
     /// the List of Buffers
     fn move_to_next_buffer(&mut self) -> bool {
         // Load the current Buffer
-        let mut current_queue = self.load_head_of_queue();
+        let current_queue_ptr = self.head_of_queue;
+        let current_queue = unsafe { &*current_queue_ptr };
 
         // If the current Queue has reached its end, we should attempt to
         // switch over to the next Buffer
@@ -277,12 +268,12 @@ impl<T> Receiver<T> {
             self.head_of_queue = next_ptr;
 
             // Drop and therefore free the previously current Buffer
-            unsafe { ManuallyDrop::drop(&mut current_queue) };
+            drop(unsafe { Box::from_raw(current_queue_ptr) });
 
             // Set the new Heads previous PTR to null to indicate that there
             // is no more valid Previous-BufferList.
             // This is needed for the cleanup of the Queue after the fact
-            let mut next = self.load_head_of_queue();
+            let next = unsafe { &mut *self.head_of_queue };
             next.previous = std::ptr::null();
         }
 
@@ -310,7 +301,7 @@ impl<T> Receiver<T> {
     /// ```
     pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
         // Loads the current Buffer that should be used
-        let mut current_queue = self.load_head_of_queue();
+        let mut current_queue = unsafe { &mut *self.head_of_queue };
 
         // Attempt to get the current Entry that we want to dequeue
         let mut n = match current_queue.buffer.get(current_queue.head) {
@@ -325,7 +316,7 @@ impl<T> Receiver<T> {
                 // Attempt to move to the next Buffer again
                 self.move_to_next_buffer();
                 // Reload the current Buffer
-                current_queue = self.load_head_of_queue();
+                current_queue = unsafe { &mut *self.head_of_queue };
 
                 // Retry the loading of the Node, we use the `?` in this case,
                 // because if we dont find it again, there is nothing else we
@@ -346,12 +337,12 @@ impl<T> Receiver<T> {
                 return Err(DequeueError::WouldBlock);
             }
 
-            current_queue = self.load_head_of_queue();
+            current_queue = unsafe { &mut *self.head_of_queue };
             n = match current_queue.buffer.get(current_queue.head) {
                 Some(n) => n,
                 None => {
                     self.move_to_next_buffer();
-                    current_queue = self.load_head_of_queue();
+                    current_queue = unsafe { &mut *self.head_of_queue };
                     match current_queue.buffer.get(current_queue.head) {
                         Some(t) => t,
                         None => return Err(DequeueError::WouldBlock),
@@ -380,13 +371,13 @@ impl<T> Receiver<T> {
             // Set and if we find one return that
             NodeState::Empty => {
                 // Load the current Head of the Queue
-                let tmp_head_of_queue = self.load_head_of_queue();
+                let tmp_head_of_queue = unsafe { &*self.head_of_queue };
                 let tmp_head = tmp_head_of_queue.head;
 
                 // Look for the next Set Node
                 // This returns the Buffer and the Index in the Buffer
                 let (tmp_head_of_queue, tmp_head) = {
-                    let (mut n_queue, result) = BufferList::scan(tmp_head_of_queue, tmp_head);
+                    let (mut n_queue, result) = BufferList::scan(self.head_of_queue, tmp_head);
                     let n_head = match result {
                         Some(n) => n,
                         // We could not find a Set Node in this pass
@@ -400,9 +391,8 @@ impl<T> Receiver<T> {
                                 // We then once again search for a Set-Node to
                                 // make sure we don't forget to dequeue any
                                 // Node
-                                let tmp_head_of_queue = self.load_head_of_queue();
                                 let (t_queue, t_result) =
-                                    BufferList::scan(tmp_head_of_queue, tmp_head);
+                                    BufferList::scan(self.head_of_queue, tmp_head);
                                 match t_result {
                                     // We still Found a Set-Node, so we will
                                     // simply continue as if the Queue has
@@ -423,7 +413,7 @@ impl<T> Receiver<T> {
                             }
                         }
                     };
-                    (n_queue, n_head)
+                    (unsafe { &*n_queue }, n_head)
                 };
 
                 // Try to load the found Node
@@ -556,7 +546,7 @@ pub fn queue<T>() -> (Receiver<T>, Sender<T>) {
     (
         Receiver {
             closed: closed.clone(),
-            head_of_queue: initial_ptr as *const BufferList<T>,
+            head_of_queue: initial_ptr,
         },
         Sender {
             closed,

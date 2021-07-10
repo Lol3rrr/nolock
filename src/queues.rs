@@ -10,5 +10,6 @@
 //! for having two different processes/threads/tasks communicate with each
 //! other
 
+pub mod mpmc;
 pub mod mpsc;
 pub mod spsc;
