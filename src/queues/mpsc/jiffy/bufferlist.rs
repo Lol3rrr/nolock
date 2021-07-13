@@ -144,7 +144,11 @@ impl<T> BufferList<T> {
 
     /// This attempts to allocate a new BufferList and store it as the next-Ptr for
     /// this Buffer as well as storing it as the new Tail-Of-Queue
-    pub fn allocate_next(&self, self_ptr: *mut Self, tail_of_queue: &atomic::AtomicPtr<Self>) {
+    pub fn allocate_next(
+        &self,
+        self_ptr: *mut Self,
+        tail_of_queue: &atomic::AtomicPtr<Self>,
+    ) -> *mut Self {
         // Create/Allocate the new Buffer
         let next_buffer = BufferList::boxed(self_ptr as *const Self, self.position_in_queue + 1);
         let next_buffer_ptr = Box::into_raw(next_buffer);
@@ -176,18 +180,42 @@ impl<T> BufferList<T> {
                         self_ptr,
                         next_buffer_ptr,
                         atomic::Ordering::SeqCst,
-                        atomic::Ordering::Acquire,
+                        atomic::Ordering::SeqCst,
                     )
                     .is_ok()
                 {}
+
+                next_buffer_ptr
             }
-            Err(_) => {
+            Err(previous) => {
                 // Someone else already created the next Buffer following the
                 // current one, meaning that we should just clean up the Buffer
                 // we created and then we have to do nothing more
                 drop(unsafe { Box::from_raw(next_buffer_ptr) });
+
+                previous
             }
-        };
+        }
+    }
+
+    /// Either loads the currently stored Next-Ptr of the Buffer or it will
+    /// create a new Buffer and append it to the BufferList
+    ///
+    /// # Returns
+    /// The Ptr to the next Buffer in the BufferList
+    pub fn go_to_next(&self, self_ptr: *mut Self, tail: &atomic::AtomicPtr<Self>) -> *mut Self {
+        // Load the Ptr to the next Element in the Buffer-List
+        let next = self.next.load(atomic::Ordering::Acquire);
+
+        // If the Next-Ptr is not Null, we already have a next Element in the
+        // BufferList and can therefore simply return that Element
+        if !next.is_null() {
+            return next;
+        }
+
+        // If we have no next Element in the BufferList, we attempt to create
+        // and append a new Buffer
+        self.allocate_next(self_ptr, tail)
     }
 
     /// This function is responsible for deallocating the BufferList pointed to

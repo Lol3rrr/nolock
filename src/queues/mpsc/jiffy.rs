@@ -132,10 +132,10 @@ impl<T> Sender<T> {
         // Load our target absolute position, on where to insert the next
         // Element
         //
-        // This needs to use Ordering::SeqCst because we would otherwise have
-        // one half of the load-store operation be Ordering::Relaxed, which
+        // This needs to use at least Ordering::AcqRel because we would otherwise
+        // have one half of the load-store operation be Ordering::Relaxed, which
         // is not what we need
-        let location = self.tail.fetch_add(1, atomic::Ordering::SeqCst);
+        let location = self.tail.fetch_add(1, atomic::Ordering::AcqRel);
 
         // Get the current tail-buffer, where we would initially attempt to
         // insert the Element into
@@ -152,16 +152,9 @@ impl<T> Sender<T> {
         // actually contains our Target-Location, because the buffer we
         // find could come after the Buffer that we actually need
         while location >= end {
-            // If the currently loaded Buffer has no next Ptr, meaning
-            // it is currently the last Buffer in the Queue, we need to
-            // create a new Buffer and append it
-            if tmp_buffer.next.load(atomic::Ordering::Acquire).is_null() {
-                // Attempt to allocate a new Buffer
-                tmp_buffer.allocate_next(tmp_buffer_ptr, &self.tail_of_queue);
-            }
-
-            // Load the new Tail of the Queue
-            tmp_buffer_ptr = self.tail_of_queue.load(atomic::Ordering::Acquire);
+            // Move to the next Buffer in the Queue, this will also automatically create
+            // a new Buffer if there is no next Buffer currently available
+            tmp_buffer_ptr = tmp_buffer.go_to_next(tmp_buffer_ptr, &self.tail_of_queue);
             tmp_buffer = unsafe { &*tmp_buffer_ptr };
 
             // Recalculate the current End of the new Tail-Buffer
