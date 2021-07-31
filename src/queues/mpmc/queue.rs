@@ -1,7 +1,7 @@
 use std::{cell::UnsafeCell, mem::MaybeUninit};
 
-mod ncq;
-mod scq;
+pub mod ncq;
+pub mod scq;
 
 pub struct Bounded<T, UQ> {
     data: Vec<UnsafeCell<MaybeUninit<T>>>,
@@ -95,6 +95,8 @@ where
         let bucket_ptr = bucket.get();
         let data = unsafe { bucket_ptr.replace(MaybeUninit::uninit()).assume_init() };
 
+        self.fq.enqueue(index);
+
         Some(data)
     }
 }
@@ -115,10 +117,29 @@ mod tests {
         assert_eq!(Some(15), queue.dequeue());
     }
     #[test]
+    fn ncq_enqueue_dequeue_fill_multiple() {
+        let queue = Bounded::<usize, ncq::Queue>::new_ncq(10);
+
+        for index in 0..(5 * 10) {
+            assert_eq!(Ok(()), queue.enqueue(index));
+            assert_eq!(Some(index), queue.dequeue());
+        }
+    }
+
+    #[test]
     fn scq_enqueue_dequeue() {
         let queue = Bounded::<u64, scq::Queue>::new_scq(10);
 
         assert_eq!(Ok(()), queue.enqueue(15));
         assert_eq!(Some(15), queue.dequeue());
+    }
+    #[test]
+    fn scq_enqueue_dequeue_fill_multiple() {
+        let queue = Bounded::<usize, scq::Queue>::new_scq(10);
+
+        for index in 0..(5 * 10) {
+            assert_eq!(Ok(()), queue.enqueue(index));
+            assert_eq!(Some(index), queue.dequeue());
+        }
     }
 }

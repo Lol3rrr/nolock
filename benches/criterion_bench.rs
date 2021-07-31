@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main};
 
 mod hash_trie;
+mod mpmc;
 mod mpsc;
 mod spsc;
 
@@ -18,6 +19,8 @@ criterion_group!(
     mpsc::std_enqueue_dequeue,
     mpsc::jiffy_concurrent_enqueue,
     mpsc::std_concurrent_enqueue,
+    mpmc::ncq_enqueue_dequeue,
+    mpmc::scq_enqueue_dequeue,
 );
 
 criterion_main!(queues, maps);

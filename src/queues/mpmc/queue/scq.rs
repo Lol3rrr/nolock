@@ -1,10 +1,6 @@
-use std::sync::atomic;
+use std::{fmt::Display, sync::atomic};
 
 use super::UnderlyingQueue;
-
-const fn unused_index(n: usize) -> usize {
-    2 * n - 1
-}
 
 /// Internal Storage
 ///
@@ -12,6 +8,7 @@ const fn unused_index(n: usize) -> usize {
 /// 1. IsSafe
 /// 2-32. Cycle
 /// 33-64. Index
+#[derive(Debug)]
 struct QueueEntry(atomic::AtomicU64);
 
 struct QueueEntryData(u64);
@@ -40,10 +37,21 @@ impl From<u64> for QueueEntryData {
         Self(data)
     }
 }
+impl Display for QueueEntryData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "(IsSafe: {}, Cycle: {}, Index: {})",
+            self.is_safe(),
+            self.cycle(),
+            self.index()
+        )
+    }
+}
 
 impl QueueEntry {
-    pub fn new(n: usize) -> Self {
-        let data = QueueEntryData::new(true, 0, unused_index(n) as u32);
+    pub fn new(invalid_index: u32) -> Self {
+        let data = QueueEntryData::new(true, 0, invalid_index);
         Self(atomic::AtomicU64::new(data.to_u64()))
     }
 
@@ -63,10 +71,15 @@ impl QueueEntry {
     pub fn or(&self, other: u64) {
         self.0.fetch_or(other, atomic::Ordering::SeqCst);
     }
+    pub fn store(&self, new: u64, order: atomic::Ordering) {
+        self.0.store(new, order)
+    }
 }
 
+#[derive(Debug)]
 pub struct Queue {
     size: usize,
+    invalid_index: u32,
     entries: Vec<QueueEntry>,
     head: atomic::AtomicUsize,
     tail: atomic::AtomicUsize,
@@ -75,16 +88,19 @@ pub struct Queue {
 
 impl Queue {
     pub fn new(capacity: usize) -> Self {
+        let invalid_index = (2 * capacity - 1) as u32;
+
         let entries = {
             let mut tmp = Vec::with_capacity(2 * capacity);
             for _ in 0..(2 * capacity) {
-                tmp.push(QueueEntry::new(capacity));
+                tmp.push(QueueEntry::new(invalid_index));
             }
             tmp
         };
 
         Self {
             size: capacity,
+            invalid_index,
             entries,
             head: atomic::AtomicUsize::new(capacity * 2),
             tail: atomic::AtomicUsize::new(capacity * 2),
@@ -125,7 +141,7 @@ impl UnderlyingQueue for Queue {
         loop {
             let tail = self.tail.fetch_add(1, atomic::Ordering::SeqCst);
             let tail_cycle = Self::cycle(tail, self.size);
-            let j = tail % self.size * 2;
+            let j = tail % (self.size * 2);
 
             let entry = self.entries.get(j).expect("");
 
@@ -135,7 +151,7 @@ impl UnderlyingQueue for Queue {
                 let entry_index = raw_entry.index();
 
                 if entry_cycle < tail_cycle
-                    && entry_index == unused_index(self.size) as u32
+                    && entry_index == self.invalid_index
                     && (raw_entry.is_safe() || self.head.load(atomic::Ordering::SeqCst) <= tail)
                 {
                     let new_value = QueueEntryData::new(true, tail_cycle, index as u32);
@@ -176,17 +192,20 @@ impl UnderlyingQueue for Queue {
                 let entry_data = entry.load(atomic::Ordering::SeqCst);
 
                 if entry_data.cycle() == head_cycle {
-                    entry
-                        .or(QueueEntryData::new(false, 0, unused_index(self.size) as u32).to_u64());
+                    entry.store(
+                        QueueEntryData::new(
+                            entry_data.is_safe(),
+                            entry_data.cycle(),
+                            self.invalid_index,
+                        )
+                        .to_u64(),
+                        atomic::Ordering::SeqCst,
+                    );
                     return Some(entry_data.index() as usize);
                 }
 
-                let new = if entry_data.index() == (unused_index(self.size) as u32) {
-                    QueueEntryData::new(
-                        entry_data.is_safe(),
-                        head_cycle,
-                        unused_index(self.size) as u32,
-                    )
+                let new = if entry_data.index() == self.invalid_index {
+                    QueueEntryData::new(entry_data.is_safe(), head_cycle, self.invalid_index)
                 } else {
                     QueueEntryData::new(false, entry_data.cycle(), entry_data.index())
                 };
@@ -269,5 +288,14 @@ mod tests {
         let queue = Queue::new(10);
         queue.enqueue(13);
         assert_eq!(Some(13), queue.dequeue());
+    }
+    #[test]
+    fn scq_enqueue_dequeue_fill_multiple() {
+        let queue = Queue::new(10);
+
+        for index in 0..(3 * 10) {
+            queue.enqueue(index);
+            assert_eq!(Some(index), queue.dequeue());
+        }
     }
 }
