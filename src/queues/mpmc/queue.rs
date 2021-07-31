@@ -110,6 +110,18 @@ mod tests {
         Bounded::<u64, ncq::Queue>::new_ncq(10);
     }
     #[test]
+    fn ncq_enqueue() {
+        let queue = Bounded::<u64, ncq::Queue>::new_ncq(10);
+
+        assert_eq!(Ok(()), queue.enqueue(15));
+    }
+    #[test]
+    fn ncq_dequeue() {
+        let queue = Bounded::<u64, ncq::Queue>::new_ncq(10);
+
+        assert_eq!(None, queue.dequeue());
+    }
+    #[test]
     fn ncq_enqueue_dequeue() {
         let queue = Bounded::<u64, ncq::Queue>::new_ncq(10);
 
@@ -126,6 +138,22 @@ mod tests {
         }
     }
 
+    #[test]
+    fn scq_new() {
+        Bounded::<u64, scq::Queue>::new_scq(10);
+    }
+    #[test]
+    fn scq_enqueue() {
+        let queue = Bounded::<u64, scq::Queue>::new_scq(10);
+
+        assert_eq!(Ok(()), queue.enqueue(15));
+    }
+    #[test]
+    fn scq_dequeue() {
+        let queue = Bounded::<u64, scq::Queue>::new_scq(10);
+
+        assert_eq!(None, queue.dequeue());
+    }
     #[test]
     fn scq_enqueue_dequeue() {
         let queue = Bounded::<u64, scq::Queue>::new_scq(10);
