@@ -19,7 +19,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: Run Clippy
       run: cargo clippy --
-  miri:
+  miri_queues:
     name: Test Queues (Miri)
     runs-on: ubuntu-latest
     steps:
