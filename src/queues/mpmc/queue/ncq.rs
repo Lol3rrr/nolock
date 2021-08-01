@@ -67,20 +67,20 @@ impl Queue {
 impl UnderlyingQueue for Queue {
     fn enqueue(&self, index: usize) {
         let tail = loop {
-            let tail = self.tail.load(atomic::Ordering::SeqCst);
+            let tail = self.tail.load(atomic::Ordering::Acquire);
             let tail_cycle = Self::cycle(tail, self.entries.capacity());
             let j = tail % self.entries.capacity();
 
             let entry = self.entries.get(j).expect("Because we always wrap around once we reach the end of the Vector, we can be sure that the Index we try to access is in the Vec itself");
 
-            let raw_entry = entry.load(atomic::Ordering::SeqCst);
+            let raw_entry = entry.load(atomic::Ordering::Acquire);
             let entry_cycle = QueueEntry::cycle(raw_entry);
             if entry_cycle == tail_cycle {
                 let _ = self.tail.compare_exchange(
                     tail,
                     tail + 1,
-                    atomic::Ordering::SeqCst,
-                    atomic::Ordering::SeqCst,
+                    atomic::Ordering::AcqRel,
+                    atomic::Ordering::Relaxed,
                 );
                 continue;
             }
@@ -88,13 +88,16 @@ impl UnderlyingQueue for Queue {
                 continue;
             }
 
-            if let Ok(_) = entry.cas(
-                raw_entry,
-                tail_cycle,
-                index as u32,
-                atomic::Ordering::SeqCst,
-                atomic::Ordering::SeqCst,
-            ) {
+            if entry
+                .cas(
+                    raw_entry,
+                    tail_cycle,
+                    index as u32,
+                    atomic::Ordering::AcqRel,
+                    atomic::Ordering::Relaxed,
+                )
+                .is_ok()
+            {
                 break tail;
             }
         };
@@ -102,20 +105,20 @@ impl UnderlyingQueue for Queue {
         let _ = self.tail.compare_exchange(
             tail,
             tail + 1,
-            atomic::Ordering::SeqCst,
-            atomic::Ordering::SeqCst,
+            atomic::Ordering::AcqRel,
+            atomic::Ordering::Relaxed,
         );
     }
 
     fn dequeue(&self) -> Option<usize> {
         let raw_index = loop {
-            let head = self.head.load(atomic::Ordering::SeqCst);
+            let head = self.head.load(atomic::Ordering::Acquire);
             let head_cycle = Self::cycle(head, self.entries.capacity());
             let j = head % self.entries.capacity();
 
             let entry = self.entries.get(j).expect("");
 
-            let raw_entry = entry.load(atomic::Ordering::SeqCst);
+            let raw_entry = entry.load(atomic::Ordering::Acquire);
             let entry_cycle = QueueEntry::cycle(raw_entry);
 
             if entry_cycle != head_cycle {
@@ -129,8 +132,8 @@ impl UnderlyingQueue for Queue {
             if let Ok(_) = self.head.compare_exchange(
                 head,
                 head + 1,
-                atomic::Ordering::SeqCst,
-                atomic::Ordering::SeqCst,
+                atomic::Ordering::AcqRel,
+                atomic::Ordering::Relaxed,
             ) {
                 break QueueEntry::index(raw_entry);
             }

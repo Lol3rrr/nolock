@@ -1,4 +1,4 @@
-use std::{fmt::Debug, mem::ManuallyDrop, sync::atomic};
+use std::{fmt::Debug, sync::atomic};
 
 use super::{
     node::{Node, NodeState},
@@ -245,6 +245,7 @@ impl<T> Debug for BufferList<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::mem::ManuallyDrop;
 
     #[test]
     fn folding_success() {
