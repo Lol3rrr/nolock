@@ -1,3 +1,6 @@
+[![Docs](https://docs.rs/nolock/badge.svg)](https://docs.rs/nolock/)
+[![Crates.io](https://img.shields.io/crates/v/nolock.svg)](https://crates.io/crates/nolock)
+
 # Nolock
 A collection of Lock-Free (sometimes also Wait-Free) algorithms and datastructures
 
