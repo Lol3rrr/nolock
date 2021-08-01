@@ -3,12 +3,21 @@ use std::{cell::UnsafeCell, mem::MaybeUninit};
 pub mod ncq;
 pub mod scq;
 
+/// A generic Version of the described Queue, which allows for different
+/// implementations of the Queue for `aq` and `fq`.
 pub struct Bounded<T, UQ> {
+    /// The actual Buffer for all the Data-Entries
     data: Vec<UnsafeCell<MaybeUninit<T>>>,
+    /// The "available"-Queue, contains all the Indices at which Data is currently
+    /// stored and can be read from
     aq: UQ,
+    /// The Queue for all the free Indices at which no Data is stored and
+    /// therefore can be used to store Data in
     fq: UQ,
 }
 
+/// This trait needs to be implemented by the Underlying-Queue that is used for
+/// the `aq` and `fq` Queues in the overall Queue.
 pub trait UnderlyingQueue {
     /// Enqueues the given Index
     fn enqueue(&self, index: usize);
@@ -17,9 +26,12 @@ pub trait UnderlyingQueue {
 }
 
 impl<T, UQ> Bounded<T, UQ> {
-    pub fn new(aq: UQ, fq: UQ, capacity: usize) -> Self {
+    /// Creates a new Queue with the given Capacity and underlying Queues
+    fn new(aq: UQ, fq: UQ, capacity: usize) -> Self {
         let data = {
+            // Creates a Vec with the given Capacity
             let mut tmp = Vec::with_capacity(capacity);
+            // Add empty Data-Points to the Vec, until its capacity is reached
             for _ in 0..capacity {
                 tmp.push(UnsafeCell::new(MaybeUninit::uninit()));
             }
@@ -30,11 +42,18 @@ impl<T, UQ> Bounded<T, UQ> {
     }
 }
 
+// Safety:
+// TODO
+unsafe impl<T, UQ> Sync for Bounded<T, UQ> {}
+
 impl<T> Bounded<T, ncq::Queue> {
+    /// Creates a new Queue with the given `capacity` using [`ncq`] for the underlying Queues
     pub fn new_ncq(capacity: usize) -> Self {
+        // Create both of the needed Queues
         let aq = ncq::Queue::new(capacity);
         let fq = ncq::Queue::new(capacity);
 
+        // Fill `fq` with all the available Indices, in this case 0-capacity
         for index in 0..capacity {
             fq.enqueue(index);
         }
@@ -43,10 +62,13 @@ impl<T> Bounded<T, ncq::Queue> {
     }
 }
 impl<T> Bounded<T, scq::Queue> {
+    /// Creates a new Queue with the given `capacity` using [`scq`] for the underlying Queues
     pub fn new_scq(capacity: usize) -> Self {
+        // Create both of the needed Queues
         let aq = scq::Queue::new(capacity);
         let fq = scq::Queue::new(capacity);
 
+        // Fill `fq` with all the available Indices, in this case 0-capacity
         for index in 0..capacity {
             fq.enqueue(index);
         }
@@ -59,22 +81,35 @@ impl<T, UQ> Bounded<T, UQ>
 where
     UQ: UnderlyingQueue,
 {
-    pub fn enqueue(&self, data: T) -> Result<(), T> {
+    /// Attempts to enqueue an item on the Queue
+    ///
+    /// # Returns
+    /// * `Ok(())` if the item was successfully enqueued
+    /// * `Err(data)` if the Queue is full and the item could not be enqueued
+    pub fn try_enqueue(&self, data: T) -> Result<(), T> {
+        // Attempt to get a free-Index to insert the data into
         let index = match self.fq.dequeue() {
             Some(i) => i,
             None => return Err(data),
         };
 
+        // Actually obtain the Bucket to insert into
         let bucket = self
             .data
             .get(index)
             .expect("The received Index should always be in the Bounds of the Data Buffer");
 
-        // TODO
-        // Write a proper safety comment as to why this is always allowed
+        // # Safety:
+        // It is safe to get mutable access to the single Bucket of Data, because we got the index
+        // of the Bucket from the Queue of free indices.
+        //
+        // Every index only exists once in either the free-Qeueu or the available-Queue and therefore
+        // no two or more threads can obtain the same index at the same time and attempt to write to it
+        // or read from it.
         let bucket_ptr = bucket.get();
         unsafe { bucket_ptr.write(MaybeUninit::new(data)) };
 
+        // Enqueue the now filled index into the Queue for Indices that contain data
         self.aq.enqueue(index);
         Ok(())
     }
@@ -90,8 +125,13 @@ where
             .get(index)
             .expect("The received Index should always be in the Bounds of the Data-Buffer");
 
-        // TODO
-        // Write a proper safety comment
+        // # Safety:
+        // It is safe to get mutable access to the single Bucket of Data, because we got the index
+        // of the Bucket from the Queue of free indices.
+        //
+        // Every index only exists once in either the free-Qeueu or the available-Queue and therefore
+        // no two or more threads can obtain the same index at the same time and attempt to write to it
+        // or read from it.
         let bucket_ptr = bucket.get();
         let data = unsafe { bucket_ptr.replace(MaybeUninit::uninit()).assume_init() };
 
@@ -113,7 +153,7 @@ mod tests {
     fn ncq_enqueue() {
         let queue = Bounded::<u64, ncq::Queue>::new_ncq(10);
 
-        assert_eq!(Ok(()), queue.enqueue(15));
+        assert_eq!(Ok(()), queue.try_enqueue(15));
     }
     #[test]
     fn ncq_dequeue() {
@@ -125,7 +165,7 @@ mod tests {
     fn ncq_enqueue_dequeue() {
         let queue = Bounded::<u64, ncq::Queue>::new_ncq(10);
 
-        assert_eq!(Ok(()), queue.enqueue(15));
+        assert_eq!(Ok(()), queue.try_enqueue(15));
         assert_eq!(Some(15), queue.dequeue());
     }
     #[test]
@@ -133,7 +173,7 @@ mod tests {
         let queue = Bounded::<usize, ncq::Queue>::new_ncq(10);
 
         for index in 0..(5 * 10) {
-            assert_eq!(Ok(()), queue.enqueue(index));
+            assert_eq!(Ok(()), queue.try_enqueue(index));
             assert_eq!(Some(index), queue.dequeue());
         }
     }
@@ -146,7 +186,7 @@ mod tests {
     fn scq_enqueue() {
         let queue = Bounded::<u64, scq::Queue>::new_scq(10);
 
-        assert_eq!(Ok(()), queue.enqueue(15));
+        assert_eq!(Ok(()), queue.try_enqueue(15));
     }
     #[test]
     fn scq_dequeue() {
@@ -158,7 +198,7 @@ mod tests {
     fn scq_enqueue_dequeue() {
         let queue = Bounded::<u64, scq::Queue>::new_scq(10);
 
-        assert_eq!(Ok(()), queue.enqueue(15));
+        assert_eq!(Ok(()), queue.try_enqueue(15));
         assert_eq!(Some(15), queue.dequeue());
     }
     #[test]
@@ -166,7 +206,7 @@ mod tests {
         let queue = Bounded::<usize, scq::Queue>::new_scq(10);
 
         for index in 0..(5 * 10) {
-            assert_eq!(Ok(()), queue.enqueue(index));
+            assert_eq!(Ok(()), queue.try_enqueue(index));
             assert_eq!(Some(index), queue.dequeue());
         }
     }

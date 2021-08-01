@@ -9,7 +9,7 @@ pub fn ncq_enqueue_dequeue(ctx: &mut Criterion) {
         let queue = nolock::queues::mpmc::bounded::ncq::queue::<u64>(10);
 
         b.iter(|| {
-            let _ = queue.enqueue(black_box(13));
+            let _ = queue.try_enqueue(black_box(13));
             assert_eq!(Some(13), queue.try_dequeue());
         });
     });
@@ -24,7 +24,7 @@ pub fn scq_enqueue_dequeue(ctx: &mut Criterion) {
         let queue = nolock::queues::mpmc::bounded::scq::queue::<u64>(10);
 
         b.iter(|| {
-            let _ = queue.enqueue(black_box(13));
+            let _ = queue.try_enqueue(black_box(13));
             assert_eq!(Some(13), queue.try_dequeue());
         });
     });
