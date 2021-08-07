@@ -193,8 +193,8 @@ impl UnderlyingQueue for Queue {
                     QueueEntryData::new(false, entry_cycle, entry_index)
                 };
 
-                if entry_cycle < head_cycle {
-                    if entry
+                if entry_cycle < head_cycle
+                    && entry
                         .cas(
                             entry_data,
                             new,
@@ -202,9 +202,8 @@ impl UnderlyingQueue for Queue {
                             atomic::Ordering::Relaxed,
                         )
                         .is_err()
-                    {
-                        continue;
-                    }
+                {
+                    continue;
                 }
 
                 let tail = self.tail.load(atomic::Ordering::Acquire);

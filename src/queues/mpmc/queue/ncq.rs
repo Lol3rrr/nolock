@@ -129,12 +129,16 @@ impl UnderlyingQueue for Queue {
                 continue;
             }
 
-            if let Ok(_) = self.head.compare_exchange(
-                head,
-                head + 1,
-                atomic::Ordering::AcqRel,
-                atomic::Ordering::Relaxed,
-            ) {
+            if self
+                .head
+                .compare_exchange(
+                    head,
+                    head + 1,
+                    atomic::Ordering::AcqRel,
+                    atomic::Ordering::Relaxed,
+                )
+                .is_ok()
+            {
                 break QueueEntry::index(raw_entry);
             }
         };

@@ -61,7 +61,7 @@ fn new_queue<T, UQ>(
         fq: fq_arc.clone(),
     };
     let tx = BoundedSender {
-        data: data.clone(),
+        data,
         aq: aq_arc,
         fq: fq_arc,
     };

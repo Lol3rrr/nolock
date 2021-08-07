@@ -6,6 +6,7 @@ use std::fmt::Display;
 // 1. IsSafe
 // 2-32. Cycle
 // 33-64. Index
+#[derive(Debug)]
 pub struct QueueEntryData(u64);
 
 impl QueueEntryData {
@@ -35,9 +36,9 @@ impl From<u64> for QueueEntryData {
         Self(data)
     }
 }
-impl Into<u64> for QueueEntryData {
-    fn into(self) -> u64 {
-        self.0
+impl From<QueueEntryData> for u64 {
+    fn from(other: QueueEntryData) -> Self {
+        other.0
     }
 }
 impl Display for QueueEntryData {

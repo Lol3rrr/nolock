@@ -66,7 +66,7 @@ impl<T> AsyncBoundedSender<T> {
 
     /// The async variant of the blocking [`enqueue`](BoundedSender::enqueue)
     /// operation on the Non-Async version of the Queue
-    pub fn enqueue<'queue>(&'queue mut self, data: T) -> EnqueueFuture<'queue, T> {
+    pub fn enqueue(&mut self, data: T) -> EnqueueFuture<'_, T> {
         EnqueueFuture {
             rx_waker: &self.rx_waker,
             tx_waker: &self.tx_waker,
@@ -114,7 +114,7 @@ impl<T> AsyncBoundedReceiver<T> {
 
     /// The async variant of the blocking [`dequeue`](BoundedReceiver::dequeue)
     /// operation on the Non-Async version of the Queue
-    pub fn dequeue<'queue>(&'queue mut self) -> DequeueFuture<'queue, T> {
+    pub fn dequeue(&mut self) -> DequeueFuture<'_, T> {
         DequeueFuture {
             rx_waker: &self.rx_waker,
             tx_waker: &self.tx_waker,

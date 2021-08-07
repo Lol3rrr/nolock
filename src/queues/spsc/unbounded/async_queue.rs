@@ -63,7 +63,7 @@ impl<T> AsyncUnboundedReceiver<T> {
     }
 
     /// Dequeues the next Item from the Queue
-    pub fn dequeue<'queue>(&'queue mut self) -> DequeueFuture<'queue, T> {
+    pub fn dequeue(&mut self) -> DequeueFuture<'_, T> {
         DequeueFuture {
             rx_waker: &self.rx_waker,
             queue: &mut self.queue,

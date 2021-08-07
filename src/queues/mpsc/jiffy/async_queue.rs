@@ -70,7 +70,7 @@ impl<T> AsyncReceiver<T> {
     /// #   rt.block_on(demo());
     /// # }
     /// ```
-    pub fn dequeue<'queue>(&'queue mut self) -> DequeueFuture<'queue, T> {
+    pub fn dequeue(&mut self) -> DequeueFuture<'_, T> {
         // Return the right DequeueFuture
         DequeueFuture {
             waker: &self.waker,

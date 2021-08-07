@@ -53,6 +53,7 @@ impl<T> BufferList<T> {
     /// # Returns
     /// * `None`: If the current BufferList has no next-Entry.
     /// * `Some(next)`: The Next BufferList, the one following the given BufferList
+    #[allow(dead_code)]
     fn fold(&self) -> Option<*mut BufferList<T>> {
         let next_ptr = self.next.load(atomic::Ordering::Acquire);
         // This acts as both the check for whether or not this is the End of
