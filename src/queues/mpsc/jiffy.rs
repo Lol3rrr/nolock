@@ -36,7 +36,7 @@ mod async_queue;
 #[cfg(feature = "async")]
 pub use async_queue::*;
 
-use super::{DequeueError, EnqueueError};
+use crate::queues::{DequeueError, EnqueueError};
 
 /// One of the Sender, created by calling [`queue`]
 pub struct Sender<T> {
@@ -278,7 +278,7 @@ impl<T> Receiver<T> {
     /// # Example
     /// ```
     /// # use nolock::queues::mpsc::jiffy;
-    /// # use nolock::queues::mpsc::DequeueError;
+    /// # use nolock::queues::DequeueError;
     ///
     /// let (mut rx, tx) = jiffy::queue::<usize>();
     ///
@@ -290,7 +290,7 @@ impl<T> Receiver<T> {
     /// // Attempt to get the next Element, but there is none so we get
     /// // the right Error indicating that there is no Element to dequeue at
     /// // that moment
-    /// assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
+    /// assert_eq!(Err(DequeueError::Empty), rx.try_dequeue());
     /// ```
     pub fn try_dequeue(&mut self) -> Result<T, DequeueError> {
         // Loads the current Buffer that should be used
@@ -317,7 +317,7 @@ impl<T> Receiver<T> {
                 // currently nothing to load
                 match current_queue.buffer.get(current_queue.head) {
                     Some(n) => n,
-                    None => return Err(DequeueError::WouldBlock),
+                    None => return Err(DequeueError::Empty),
                 }
             }
         };
@@ -327,7 +327,7 @@ impl<T> Receiver<T> {
             current_queue.head += 1;
 
             if !self.move_to_next_buffer() {
-                return Err(DequeueError::WouldBlock);
+                return Err(DequeueError::Empty);
             }
 
             current_queue = unsafe { &mut *self.head_of_queue };
@@ -338,7 +338,7 @@ impl<T> Receiver<T> {
                     current_queue = unsafe { &mut *self.head_of_queue };
                     match current_queue.buffer.get(current_queue.head) {
                         Some(t) => t,
-                        None => return Err(DequeueError::WouldBlock),
+                        None => return Err(DequeueError::Empty),
                     }
                 }
             };
@@ -402,7 +402,7 @@ impl<T> Receiver<T> {
                                     None => return Err(DequeueError::Closed),
                                 }
                             } else {
-                                return Err(DequeueError::WouldBlock);
+                                return Err(DequeueError::Empty);
                             }
                         }
                     };
@@ -412,7 +412,7 @@ impl<T> Receiver<T> {
                 // Try to load the found Node
                 let tmp_n = match tmp_head_of_queue.buffer.get(tmp_head) {
                     Some(n) => n,
-                    None => return Err(DequeueError::WouldBlock),
+                    None => return Err(DequeueError::Empty),
                 };
 
                 // Actually load the Data from the Node
@@ -446,7 +446,7 @@ impl<T> Receiver<T> {
                 Some(data)
                 */
             }
-            _ => Err(DequeueError::WouldBlock),
+            _ => Err(DequeueError::Empty),
         }
     }
 
@@ -468,7 +468,7 @@ impl<T> Receiver<T> {
                 Err(e) => match e {
                     // If we had a simply error telling us that there is item
                     // in the Queue, we should simply continue
-                    DequeueError::WouldBlock => {}
+                    DequeueError::Empty => {}
                     // If the Queue has been closed, there is nothing we could
                     // retrieve in the Future and therefore we return None
                     DequeueError::Closed => return None,
@@ -557,7 +557,7 @@ mod tests {
     fn dequeue_empty() {
         let (mut rx, tx) = queue::<u8>();
 
-        assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
+        assert_eq!(Err(DequeueError::Empty), rx.try_dequeue());
         drop(tx);
     }
 

@@ -10,26 +10,3 @@
 //! should be useable even in performance critical environments.
 
 pub mod jiffy;
-
-/// This Error is potentially returned by the Enqueue Operation
-#[derive(Debug, PartialEq)]
-pub enum EnqueueError {
-    /// The Queue has been closed by the Consumer and therefore no more
-    /// Elements should be enqueued on the Queue as they would never be
-    /// consumed
-    Closed,
-}
-
-/// This Error is potentially returned by the Enqueue Operation
-#[derive(Debug, PartialEq)]
-pub enum DequeueError {
-    /// The Queue is most likely empty and therefore there is nothing to
-    /// load right now.
-    ///
-    /// This indicates that the Operation could succeed in the Future if you
-    /// attempt to perform it again
-    WouldBlock,
-    /// The Queue has been closed by the Producers and there will be no more
-    /// Elements that could be dequeued from the Queue
-    Closed,
-}

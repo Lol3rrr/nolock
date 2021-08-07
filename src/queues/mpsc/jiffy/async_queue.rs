@@ -1,7 +1,7 @@
 use futures::task::AtomicWaker;
 use std::{fmt::Debug, future::Future, sync::Arc, task::Poll};
 
-use crate::queues::mpsc::{DequeueError, EnqueueError};
+use crate::queues::{DequeueError, EnqueueError};
 
 use super::{queue, Receiver, Sender};
 
@@ -114,7 +114,7 @@ impl<'queue, T> Future for DequeueFuture<'queue, T> {
             Ok(d) => Poll::Ready(Ok(d)),
             // If it did not work, update the Waker and return Pending
             Err(e) => match e {
-                DequeueError::WouldBlock => {
+                DequeueError::Empty => {
                     // Update the shared Waker with the right Waker for the current
                     // Task
                     self.waker.register(cx.waker());
@@ -151,7 +151,7 @@ impl<T> AsyncSender<T> {
     ///
     ///   // Enqueue the given Data
     ///   assert_eq!(Ok(()), tx.enqueue(13));
-    ///   
+    ///
     ///   # assert_eq!(Ok(13), rx.dequeue().await);
     /// }
     ///
