@@ -6,8 +6,6 @@
 mod queue;
 
 // TODO
-// * Add Support for detecting if a Queue has been closed by either side and then return the
-// corresponding errors for further operations
 // * Add the Unbounded version
 
 pub mod bounded {
@@ -81,9 +79,27 @@ pub mod bounded {
         impl<T> Sender<T> {
             /// Attempts to enqueue the Data on the Queue
             ///
-            /// # Returns
-            /// * `Ok(())` if the Data was successfully enqueued
-            /// * `Err(data)` if the Queue was full at the Time of enqueuing the Data
+            /// # Example
+            /// ## Valid/Normal enqueue
+            /// ```rust
+            /// # use nolock::queues::mpmc::bounded::ncq;
+            /// let (rx, tx) = ncq::queue::<u64>(10);
+            ///
+            /// assert_eq!(Ok(()), tx.try_enqueue(13));
+            /// # drop(rx);
+            /// ```
+            ///
+            /// ## Queue is already full
+            /// ```rust
+            /// # use nolock::queues::mpmc::bounded::ncq;
+            /// # use nolock::queues::EnqueueError;
+            /// let (rx, tx) = ncq::queue::<u64>(1);
+            /// // Enqueue an Element to fill the Queue
+            /// tx.try_enqueue(13);
+            ///
+            /// assert_eq!(Err((EnqueueError::Full, 13)), tx.try_enqueue(13));
+            /// # drop(rx);
+            /// ```
             pub fn try_enqueue(&self, data: T) -> Result<(), (EnqueueError, T)> {
                 self.0.try_enqueue(data)
             }
@@ -92,9 +108,29 @@ pub mod bounded {
         impl<T> Receiver<T> {
             /// Attempts to dequeue an Item from the Queue
             ///
-            /// # Returns
-            /// * `Some(data)` if there was an Item to dequeue
-            /// * `None` if there was no Item to dequeue at the time of dequeuing
+            /// # Example
+            /// ## Successfully enqueue Element
+            /// ```rust
+            /// # use nolock::queues::mpmc::bounded::ncq;
+            /// let (rx, tx) = ncq::queue::<u64>(10);
+            ///
+            /// // Enqueue an Item
+            /// tx.try_enqueue(13).unwrap();
+            ///
+            /// // Dequeue the Item
+            /// assert_eq!(Ok(13), rx.try_dequeue());
+            /// ```
+            ///
+            /// ## Enqueue from empty Queue
+            /// ```rust
+            /// # use nolock::queues::mpmc::bounded::ncq;
+            /// # use nolock::queues::DequeueError;
+            /// let (rx, tx) = ncq::queue::<u64>(10);
+            ///
+            /// // Attempt to Dequeue an item
+            /// assert_eq!(Err(DequeueError::Empty), rx.try_dequeue());
+            /// # drop(tx);
+            /// ```
             pub fn try_dequeue(&self) -> Result<T, DequeueError> {
                 self.0.dequeue()
             }
@@ -151,11 +187,29 @@ pub mod bounded {
         }
 
         impl<T> Sender<T> {
-            /// Attempts to Enqueue the given Data.
+            /// Attempts to Enqueue the given Data
             ///
-            /// # Returns
-            /// * `Ok(())` if the Data was successfully enqueued
-            /// * `Err(data)` if the Queue is full and the Data could not be enqueued
+            /// # Example
+            /// ## Valid/Normal enqueue
+            /// ```rust
+            /// # use nolock::queues::mpmc::bounded::scq;
+            /// let (rx, tx) = scq::queue::<u64>(10);
+            ///
+            /// assert_eq!(Ok(()), tx.try_enqueue(13));
+            /// # drop(rx);
+            /// ```
+            ///
+            /// ## Queue is already full
+            /// ```rust
+            /// # use nolock::queues::mpmc::bounded::scq;
+            /// # use nolock::queues::EnqueueError;
+            /// let (rx, tx) = scq::queue::<u64>(1);
+            /// // Enqueue an Element to fill the Queue
+            /// tx.try_enqueue(13);
+            ///
+            /// assert_eq!(Err((EnqueueError::Full, 13)), tx.try_enqueue(13));
+            /// # drop(rx);
+            /// ```
             pub fn try_enqueue(&self, data: T) -> Result<(), (EnqueueError, T)> {
                 self.0.try_enqueue(data)
             }
@@ -164,9 +218,29 @@ pub mod bounded {
         impl<T> Receiver<T> {
             /// Attempts to Dequeue an item from the Queue
             ///
-            /// # Returns
-            /// * `Some(item)` if there was an Item to dequeue
-            /// * `None` if the Qeuue was empty at the Time of dequeuing
+            /// # Example
+            /// ## Successfully enqueue Element
+            /// ```rust
+            /// # use nolock::queues::mpmc::bounded::scq;
+            /// let (rx, tx) = scq::queue::<u64>(10);
+            ///
+            /// // Enqueue an Item
+            /// tx.try_enqueue(13).unwrap();
+            ///
+            /// // Dequeue the Item
+            /// assert_eq!(Ok(13), rx.try_dequeue());
+            /// ```
+            ///
+            /// ## Enqueue from empty Queue
+            /// ```rust
+            /// # use nolock::queues::mpmc::bounded::scq;
+            /// # use nolock::queues::DequeueError;
+            /// let (rx, tx) = scq::queue::<u64>(10);
+            ///
+            /// // Attempt to Dequeue an item
+            /// assert_eq!(Err(DequeueError::Empty), rx.try_dequeue());
+            /// # drop(tx);
+            /// ```
             pub fn try_dequeue(&self) -> Result<T, DequeueError> {
                 self.0.dequeue()
             }
