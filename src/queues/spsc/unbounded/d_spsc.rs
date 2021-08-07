@@ -1,6 +1,7 @@
 //! The Basic and slower version
 
-use super::super::{bounded, DequeueError};
+use super::super::bounded;
+use crate::queues::DequeueError;
 
 use std::{
     fmt::Debug,
@@ -125,7 +126,7 @@ impl<T> UnboundedReceiver<T> {
         if next_ptr.is_null() {
             // Return the right error to indicate that there is currently
             // nothing to load
-            return Err(DequeueError::WouldBlock);
+            return Err(DequeueError::Empty);
         }
 
         // Load the next Entry
@@ -228,10 +229,10 @@ mod tests {
     fn dequeue_empty() {
         let (mut rx, mut tx) = unbounded_basic_queue();
 
-        assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
+        assert_eq!(Err(DequeueError::Empty), rx.try_dequeue());
         tx.enqueue(13).unwrap();
         assert_eq!(Ok(13), rx.try_dequeue());
-        assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
+        assert_eq!(Err(DequeueError::Empty), rx.try_dequeue());
     }
     #[test]
     fn multiple_enqueue_dequeue() {

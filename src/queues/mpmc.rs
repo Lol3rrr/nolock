@@ -32,7 +32,7 @@ pub mod bounded {
         //! // Insert an Item into the Queue
         //! assert_eq!(Ok(()), tx.try_enqueue(10));
         //! // Dequeue the previously inserted Item
-        //! assert_eq!(Some(10), rx.try_dequeue());
+        //! assert_eq!(Ok(10), rx.try_dequeue());
         //! ```
 
         use std::fmt::Debug;
@@ -100,7 +100,7 @@ pub mod bounded {
         //! // Insert an Item into the Queue
         //! assert_eq!(Ok(()), tx.try_enqueue(10));
         //! // Dequeue the previously inserted Item
-        //! assert_eq!(Some(10), rx.try_dequeue());
+        //! assert_eq!(Ok(10), rx.try_dequeue());
         //! ```
 
         use std::fmt::Debug;

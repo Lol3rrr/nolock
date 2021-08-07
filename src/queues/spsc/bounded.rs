@@ -21,7 +21,7 @@ use std::{
     sync::{atomic, Arc},
 };
 
-use super::{DequeueError, EnqueueError};
+use crate::queues::{DequeueError, EnqueueError};
 
 #[cfg(feature = "async")]
 mod async_queue;
@@ -102,7 +102,7 @@ impl<T> BoundedSender<T> {
     /// Enqueue Data when there is no more space
     /// ```
     /// # use nolock::queues::spsc::bounded;
-    /// # use nolock::queues::spsc::EnqueueError;
+    /// # use nolock::queues::EnqueueError;
     /// // Create a new Queue with the capacity for 16 Elements
     /// let (mut rx, mut tx) = bounded::queue::<usize>(16);
     ///
@@ -112,7 +112,7 @@ impl<T> BoundedSender<T> {
     /// }
     ///
     /// // Attempt to enqueue some Data, but there is no more room
-    /// assert_eq!(Err((13, EnqueueError::WouldBlock)), tx.try_enqueue(13));
+    /// assert_eq!(Err((13, EnqueueError::Full)), tx.try_enqueue(13));
     ///
     /// # drop(rx);
     /// ```
@@ -129,7 +129,7 @@ impl<T> BoundedSender<T> {
         // store the new Element, meaning that the Buffer is full and we should
         // Error out indicating this
         if buffer_entry.is_set() {
-            return Err((data, EnqueueError::WouldBlock));
+            return Err((data, EnqueueError::Full));
         }
 
         // The Node is not already set meaning that we can simply store the
@@ -151,7 +151,7 @@ impl<T> BoundedSender<T> {
             match self.try_enqueue(data) {
                 Ok(_) => return Ok(()),
                 Err((d, e)) => match e {
-                    EnqueueError::WouldBlock => {
+                    EnqueueError::Full => {
                         data = d;
                     }
                     EnqueueError::Closed => return Err((d, EnqueueError::Closed)),
@@ -225,12 +225,12 @@ impl<T> BoundedReceiver<T> {
     /// The Queue is empty and therefore nothing could be dequeued
     /// ```
     /// # use nolock::queues::spsc::bounded;
-    /// # use nolock::queues::spsc::DequeueError;
+    /// # use nolock::queues::DequeueError;
     /// // Create a new Queue with the Capacity for 16-Elements
     /// let (mut rx, mut tx) = bounded::queue::<usize>(16);
     ///
     /// // Dequeue the Element again
-    /// assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
+    /// assert_eq!(Err(DequeueError::Empty), rx.try_dequeue());
     ///
     /// # drop(tx);
     /// ```
@@ -251,7 +251,7 @@ impl<T> BoundedReceiver<T> {
                 }
             }
 
-            return Err(DequeueError::WouldBlock);
+            return Err(DequeueError::Empty);
         }
 
         // If the Node is set, we can load the Data out of the Node itself
@@ -272,7 +272,7 @@ impl<T> BoundedReceiver<T> {
             match self.try_dequeue() {
                 Ok(d) => return Some(d),
                 Err(e) => match e {
-                    DequeueError::WouldBlock => {}
+                    DequeueError::Empty => {}
                     DequeueError::Closed => return None,
                 },
             };
@@ -346,7 +346,7 @@ mod tests {
         let (rx, mut tx) = queue(1);
 
         assert_eq!(Ok(()), tx.try_enqueue(13));
-        assert_eq!(Err((14, EnqueueError::WouldBlock)), tx.try_enqueue(14));
+        assert_eq!(Err((14, EnqueueError::Full)), tx.try_enqueue(14));
 
         drop(rx);
     }
@@ -354,7 +354,7 @@ mod tests {
     fn dequeue_will_block() {
         let (mut rx, tx) = queue::<usize>(1);
 
-        assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
+        assert_eq!(Err(DequeueError::Empty), rx.try_dequeue());
 
         drop(tx);
     }

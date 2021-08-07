@@ -23,7 +23,8 @@ use std::{
     sync::{atomic, Arc},
 };
 
-use super::{bounded, DequeueError, EnqueueError};
+use super::bounded;
+use crate::queues::{DequeueError, EnqueueError};
 
 #[cfg(feature = "async")]
 mod async_queue;
@@ -92,7 +93,7 @@ impl<T> UnboundedSender<T> {
     /// Failed Enqueue, the Queue has been closed
     /// ```
     /// # use nolock::queues::spsc::unbounded;
-    /// # use nolock::queues::spsc::EnqueueError;
+    /// # use nolock::queues::EnqueueError;
     /// let (rx, mut tx) = unbounded::queue::<usize>();
     ///
     /// // Drop the Consumer and therefore also close the Queue
@@ -191,10 +192,10 @@ impl<T> UnboundedReceiver<T> {
     /// Dequeue on empty Queue
     /// ```
     /// # use nolock::queues::spsc::unbounded;
-    /// # use nolock::queues::spsc::DequeueError;
+    /// # use nolock::queues::DequeueError;
     /// let (mut rx, mut tx) = unbounded::queue::<usize>();
     ///
-    /// assert_eq!(Err(DequeueError::WouldBlock), rx.try_dequeue());
+    /// assert_eq!(Err(DequeueError::Empty), rx.try_dequeue());
     ///
     /// # drop(tx);
     /// ```
@@ -206,7 +207,7 @@ impl<T> UnboundedReceiver<T> {
             // If we receive this Error, we know that the Queue is empty, but
             // the Producer has not moved on to another Queue, as it would then
             // be considered Closed and would return a different Error
-            Err(DequeueError::WouldBlock) => Err(DequeueError::WouldBlock),
+            Err(DequeueError::Empty) => Err(DequeueError::Empty),
             // This indicates that the Producer has dropped the current Queue,
             // which indicates that they either moved on to a new Queue already,
             // as this one had been completly filled before, or that the entire
@@ -238,7 +239,7 @@ impl<T> UnboundedReceiver<T> {
             match self.try_dequeue() {
                 Ok(d) => return Some(d),
                 Err(e) => match e {
-                    DequeueError::WouldBlock => {}
+                    DequeueError::Empty => {}
                     DequeueError::Closed => return None,
                 },
             };

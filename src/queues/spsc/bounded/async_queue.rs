@@ -2,7 +2,7 @@ use std::{fmt::Debug, future::Future, sync::Arc, task::Poll};
 
 use futures::task::AtomicWaker;
 
-use crate::queues::spsc::{DequeueError, EnqueueError};
+use crate::queues::{DequeueError, EnqueueError};
 
 use super::{BoundedReceiver, BoundedSender};
 
@@ -168,7 +168,7 @@ impl<'queue, T> Future for EnqueueFuture<'queue, T> {
                 Poll::Ready(Ok(()))
             }
             Err((d, e)) => match e {
-                EnqueueError::WouldBlock => {
+                EnqueueError::Full => {
                     self.data.replace(d);
                     self.tx_waker.register(cx.waker());
 
@@ -201,7 +201,7 @@ impl<'queue, T> Future for DequeueFuture<'queue, T> {
                 Poll::Ready(Ok(d))
             }
             Err(e) => match e {
-                DequeueError::WouldBlock => {
+                DequeueError::Empty => {
                     self.rx_waker.register(cx.waker());
                     Poll::Pending
                 }

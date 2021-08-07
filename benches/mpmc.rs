@@ -10,7 +10,7 @@ pub fn ncq_enqueue_dequeue(ctx: &mut Criterion) {
 
         b.iter(|| {
             let _ = tx.try_enqueue(black_box(13));
-            assert_eq!(Some(13), rx.try_dequeue());
+            assert_eq!(Ok(13), rx.try_dequeue());
         });
     });
 }
@@ -25,7 +25,7 @@ pub fn scq_enqueue_dequeue(ctx: &mut Criterion) {
 
         b.iter(|| {
             let _ = tx.try_enqueue(black_box(13));
-            assert_eq!(Some(13), rx.try_dequeue());
+            assert_eq!(Ok(13), rx.try_dequeue());
         });
     });
 }
