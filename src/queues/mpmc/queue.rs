@@ -1,19 +1,26 @@
-use std::{cell::UnsafeCell, mem::MaybeUninit};
+use std::{cell::UnsafeCell, mem::MaybeUninit, sync::Arc};
 
 pub mod ncq;
 pub mod scq;
 
-/// A generic Version of the described Queue, which allows for different
-/// implementations of the Queue for `aq` and `fq`.
-pub struct Bounded<T, UQ> {
+/// The Receiver Side of a generic MPMC-Queue, according to the related Paper, which allows for
+/// different implementations of the Underlying Queue for `aq` and `fq`
+pub struct BoundedReceiver<T, UQ> {
     /// The actual Buffer for all the Data-Entries
-    data: Vec<UnsafeCell<MaybeUninit<T>>>,
+    data: Arc<Vec<UnsafeCell<MaybeUninit<T>>>>,
     /// The "available"-Queue, contains all the Indices at which Data is currently
     /// stored and can be read from
-    aq: UQ,
+    aq: Arc<UQ>,
     /// The Queue for all the free Indices at which no Data is stored and
     /// therefore can be used to store Data in
-    fq: UQ,
+    fq: Arc<UQ>,
+}
+/// The Sender Side of a generic MPMC-Queue, according to the related Paper, which allows for
+/// different implementations of the Underlying Queue for `aq` and `fq`
+pub struct BoundedSender<T, UQ> {
+    data: Arc<Vec<UnsafeCell<MaybeUninit<T>>>>,
+    aq: Arc<UQ>,
+    fq: Arc<UQ>,
 }
 
 /// This trait needs to be implemented by the Underlying-Queue that is used for
@@ -25,59 +32,77 @@ pub trait UnderlyingQueue {
     fn dequeue(&self) -> Option<usize>;
 }
 
-impl<T, UQ> Bounded<T, UQ> {
-    /// Creates a new Queue with the given Capacity and underlying Queues
-    fn new(aq: UQ, fq: UQ, capacity: usize) -> Self {
-        let data = {
-            // Creates a Vec with the given Capacity
-            let mut tmp = Vec::with_capacity(capacity);
-            // Add empty Data-Points to the Vec, until its capacity is reached
-            for _ in 0..capacity {
-                tmp.push(UnsafeCell::new(MaybeUninit::uninit()));
-            }
-            tmp
-        };
+fn new_queue<T, UQ>(
+    aq: UQ,
+    fq: UQ,
+    capacity: usize,
+) -> (BoundedReceiver<T, UQ>, BoundedSender<T, UQ>) {
+    let data = {
+        // Creates a Vec with the given Capacity
+        let mut tmp = Vec::with_capacity(capacity);
+        // Add empty Data-Points to the Vec, until its capacity is reached
+        for _ in 0..capacity {
+            tmp.push(UnsafeCell::new(MaybeUninit::uninit()));
+        }
+        Arc::new(tmp)
+    };
 
-        Self { data, aq, fq }
-    }
+    let aq_arc = Arc::new(aq);
+    let fq_arc = Arc::new(fq);
+
+    let rx = BoundedReceiver {
+        data: data.clone(),
+        aq: aq_arc.clone(),
+        fq: fq_arc.clone(),
+    };
+    let tx = BoundedSender {
+        data: data.clone(),
+        aq: aq_arc,
+        fq: fq_arc,
+    };
+    (rx, tx)
 }
 
 // Safety:
 // TODO
-unsafe impl<T, UQ> Sync for Bounded<T, UQ> {}
+unsafe impl<T, UQ> Sync for BoundedReceiver<T, UQ> {}
+unsafe impl<T, UQ> Sync for BoundedSender<T, UQ> {}
+// Safety:
+// TODO
+unsafe impl<T, UQ> Send for BoundedReceiver<T, UQ> {}
+unsafe impl<T, UQ> Send for BoundedSender<T, UQ> {}
 
-impl<T> Bounded<T, ncq::Queue> {
-    /// Creates a new Queue with the given `capacity` using [`ncq`] for the underlying Queues
-    pub fn new_ncq(capacity: usize) -> Self {
-        // Create both of the needed Queues
-        let aq = ncq::Queue::new(capacity);
-        let fq = ncq::Queue::new(capacity);
+pub fn queue_ncq<T>(
+    capacity: usize,
+) -> (BoundedReceiver<T, ncq::Queue>, BoundedSender<T, ncq::Queue>) {
+    // Create both of the needed Queues
+    let aq = ncq::Queue::new(capacity);
+    let fq = ncq::Queue::new(capacity);
 
-        // Fill `fq` with all the available Indices, in this case 0-capacity
-        for index in 0..capacity {
-            fq.enqueue(index);
-        }
-
-        Self::new(aq, fq, capacity)
+    // Fill `fq` with all the available Indices, in this case 0-capacity
+    for index in 0..capacity {
+        fq.enqueue(index);
     }
-}
-impl<T> Bounded<T, scq::Queue> {
-    /// Creates a new Queue with the given `capacity` using [`scq`] for the underlying Queues
-    pub fn new_scq(capacity: usize) -> Self {
-        // Create both of the needed Queues
-        let aq = scq::Queue::new(capacity);
-        let fq = scq::Queue::new(capacity);
 
-        // Fill `fq` with all the available Indices, in this case 0-capacity
-        for index in 0..capacity {
-            fq.enqueue(index);
-        }
-
-        Self::new(aq, fq, capacity)
-    }
+    new_queue(aq, fq, capacity)
 }
 
-impl<T, UQ> Bounded<T, UQ>
+pub fn queue_scq<T>(
+    capacity: usize,
+) -> (BoundedReceiver<T, scq::Queue>, BoundedSender<T, scq::Queue>) {
+    // Create both of the needed Queues
+    let aq = scq::Queue::new(capacity);
+    let fq = scq::Queue::new(capacity);
+
+    // Fill `fq` with all the available Indices, in this case 0-capacity
+    for index in 0..capacity {
+        fq.enqueue(index);
+    }
+
+    new_queue(aq, fq, capacity)
+}
+
+impl<T, UQ> BoundedSender<T, UQ>
 where
     UQ: UnderlyingQueue,
 {
@@ -113,7 +138,12 @@ where
         self.aq.enqueue(index);
         Ok(())
     }
+}
 
+impl<T, UQ> BoundedReceiver<T, UQ>
+where
+    UQ: UnderlyingQueue,
+{
     pub fn dequeue(&self) -> Option<T> {
         let index = match self.aq.dequeue() {
             Some(i) => i,
@@ -147,67 +177,67 @@ mod tests {
 
     #[test]
     fn ncq_new() {
-        Bounded::<u64, ncq::Queue>::new_ncq(10);
+        queue_ncq::<u64>(10);
     }
     #[test]
     fn ncq_enqueue() {
-        let queue = Bounded::<u64, ncq::Queue>::new_ncq(10);
+        let (rx, tx) = queue_ncq::<u64>(10);
 
-        assert_eq!(Ok(()), queue.try_enqueue(15));
+        assert_eq!(Ok(()), tx.try_enqueue(15));
     }
     #[test]
     fn ncq_dequeue() {
-        let queue = Bounded::<u64, ncq::Queue>::new_ncq(10);
+        let (rx, tx) = queue_ncq::<u64>(10);
 
-        assert_eq!(None, queue.dequeue());
+        assert_eq!(None, rx.dequeue());
     }
     #[test]
     fn ncq_enqueue_dequeue() {
-        let queue = Bounded::<u64, ncq::Queue>::new_ncq(10);
+        let (rx, tx) = queue_ncq::<u64>(10);
 
-        assert_eq!(Ok(()), queue.try_enqueue(15));
-        assert_eq!(Some(15), queue.dequeue());
+        assert_eq!(Ok(()), tx.try_enqueue(15));
+        assert_eq!(Some(15), rx.dequeue());
     }
     #[test]
     fn ncq_enqueue_dequeue_fill_multiple() {
-        let queue = Bounded::<usize, ncq::Queue>::new_ncq(10);
+        let (rx, tx) = queue_ncq::<u64>(10);
 
         for index in 0..(5 * 10) {
-            assert_eq!(Ok(()), queue.try_enqueue(index));
-            assert_eq!(Some(index), queue.dequeue());
+            assert_eq!(Ok(()), tx.try_enqueue(index));
+            assert_eq!(Some(index), rx.dequeue());
         }
     }
 
     #[test]
     fn scq_new() {
-        Bounded::<u64, scq::Queue>::new_scq(10);
+        queue_scq::<u64>(10);
     }
     #[test]
     fn scq_enqueue() {
-        let queue = Bounded::<u64, scq::Queue>::new_scq(10);
+        let (rx, tx) = queue_scq::<u64>(10);
 
-        assert_eq!(Ok(()), queue.try_enqueue(15));
+        assert_eq!(Ok(()), tx.try_enqueue(15));
     }
     #[test]
     fn scq_dequeue() {
-        let queue = Bounded::<u64, scq::Queue>::new_scq(10);
+        let (rx, tx) = queue_scq::<u64>(10);
 
-        assert_eq!(None, queue.dequeue());
+        assert_eq!(None, rx.dequeue());
     }
     #[test]
     fn scq_enqueue_dequeue() {
-        let queue = Bounded::<u64, scq::Queue>::new_scq(10);
+        let (rx, tx) = queue_scq::<u64>(10);
 
-        assert_eq!(Ok(()), queue.try_enqueue(15));
-        assert_eq!(Some(15), queue.dequeue());
+        assert_eq!(Ok(()), tx.try_enqueue(15));
+        assert_eq!(Some(15), rx.dequeue());
     }
     #[test]
     fn scq_enqueue_dequeue_fill_multiple() {
-        let queue = Bounded::<usize, scq::Queue>::new_scq(10);
+        let (rx, tx) = queue_scq::<u64>(10);
 
         for index in 0..(5 * 10) {
-            assert_eq!(Ok(()), queue.try_enqueue(index));
-            assert_eq!(Some(index), queue.dequeue());
+            assert_eq!(Ok(()), tx.try_enqueue(index));
+            assert_eq!(Some(index), rx.dequeue());
         }
     }
 }

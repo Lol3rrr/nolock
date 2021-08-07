@@ -148,6 +148,7 @@ impl UnderlyingQueue for Queue {
                     {
                         continue;
                     }
+
                     let thres_chk = (self.size * 3 - 1) as isize;
                     if self.threshold.load(atomic::Ordering::Acquire) != thres_chk {
                         self.threshold.store(thres_chk, atomic::Ordering::Release);

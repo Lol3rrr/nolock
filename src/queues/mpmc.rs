@@ -22,34 +22,43 @@ pub mod bounded {
         //! ```rust
         //! # use nolock::queues::mpmc::bounded::ncq;
         //! // Create the Queue
-        //! let queue = ncq::queue::<u64>(10);
+        //! let (rx, tx) = ncq::queue::<u64>(10);
         //!
         //! // Insert an Item into the Queue
-        //! assert_eq!(Ok(()), queue.try_enqueue(10));
+        //! assert_eq!(Ok(()), tx.try_enqueue(10));
         //! // Dequeue the previously inserted Item
-        //! assert_eq!(Some(10), queue.try_dequeue());
+        //! assert_eq!(Some(10), rx.try_dequeue());
         //! ```
 
         use std::fmt::Debug;
 
         use super::queue;
 
-        /// The Consumer and Producer for the NCQ-Queue
-        pub struct Queue<T>(queue::Bounded<T, queue::ncq::Queue>);
+        /// TODO
+        pub struct Receiver<T>(queue::BoundedReceiver<T, queue::ncq::Queue>);
+        /// TODO
+        pub struct Sender<T>(queue::BoundedSender<T, queue::ncq::Queue>);
 
-        impl<T> Debug for Queue<T> {
+        impl<T> Debug for Receiver<T> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 // TODO
-                write!(f, "NCQ-Queue<{}>()", std::any::type_name::<T>())
+                write!(f, "NCQ-Receiver<{}>()", std::any::type_name::<T>())
+            }
+        }
+        impl<T> Debug for Sender<T> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                // TODO
+                write!(f, "NCQ-Sender<{}>()", std::any::type_name::<T>())
             }
         }
 
         /// Creates a new NCQ-Queue with the given Capacity
-        pub fn queue<T>(capacity: usize) -> Queue<T> {
-            Queue(queue::Bounded::new_ncq(capacity))
+        pub fn queue<T>(capacity: usize) -> (Receiver<T>, Sender<T>) {
+            let (rx, tx) = queue::queue_ncq(capacity);
+            (Receiver(rx), Sender(tx))
         }
 
-        impl<T> Queue<T> {
+        impl<T> Sender<T> {
             /// Attempts to enqueue the Data on the Queue
             ///
             /// # Returns
@@ -58,7 +67,9 @@ pub mod bounded {
             pub fn try_enqueue(&self, data: T) -> Result<(), T> {
                 self.0.try_enqueue(data)
             }
+        }
 
+        impl<T> Receiver<T> {
             /// Attempts to dequeue an Item from the Queue
             ///
             /// # Returns
@@ -77,25 +88,33 @@ pub mod bounded {
         //! ```rust
         //! # use nolock::queues::mpmc::bounded::scq;
         //! // Create the Queue
-        //! let queue = scq::queue::<u64>(10);
+        //! let (rx, tx) = scq::queue::<u64>(10);
         //!
         //! // Insert an Item into the Queue
-        //! assert_eq!(Ok(()), queue.try_enqueue(10));
+        //! assert_eq!(Ok(()), tx.try_enqueue(10));
         //! // Dequeue the previously inserted Item
-        //! assert_eq!(Some(10), queue.try_dequeue());
+        //! assert_eq!(Some(10), rx.try_dequeue());
         //! ```
 
         use std::fmt::Debug;
 
         use super::queue;
 
-        /// The Consumer and Producer for the SCQ-Queue
-        pub struct Queue<T>(queue::Bounded<T, queue::scq::Queue>);
+        /// TODO
+        pub struct Receiver<T>(queue::BoundedReceiver<T, queue::scq::Queue>);
+        /// TODO
+        pub struct Sender<T>(queue::BoundedSender<T, queue::scq::Queue>);
 
-        impl<T> Debug for Queue<T> {
+        impl<T> Debug for Receiver<T> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 // TODO
-                write!(f, "SCQ-Queue<{}>()", std::any::type_name::<T>())
+                write!(f, "SCQ-Receiver<{}>()", std::any::type_name::<T>())
+            }
+        }
+        impl<T> Debug for Sender<T> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                // TODO
+                write!(f, "SCQ-Sender<{}>()", std::any::type_name::<T>())
             }
         }
 
@@ -104,11 +123,12 @@ pub mod bounded {
         /// Unlike the other Queues in this crate, this Queue combines the Producer and Consumer in
         /// a single Struct, as they dont have any restrictions that would limit the other half in
         /// some way and need to share certain state anyway.
-        pub fn queue<T>(capacity: usize) -> Queue<T> {
-            Queue(queue::Bounded::new_scq(capacity))
+        pub fn queue<T>(capacity: usize) -> (Receiver<T>, Sender<T>) {
+            let (rx, tx) = queue::queue_scq(capacity);
+            (Receiver(rx), Sender(tx))
         }
 
-        impl<T> Queue<T> {
+        impl<T> Sender<T> {
             /// Attempts to Enqueue the given Data.
             ///
             /// # Returns
@@ -117,7 +137,9 @@ pub mod bounded {
             pub fn try_enqueue(&self, data: T) -> Result<(), T> {
                 self.0.try_enqueue(data)
             }
+        }
 
+        impl<T> Receiver<T> {
             /// Attempts to Dequeue an item from the Queue
             ///
             /// # Returns
