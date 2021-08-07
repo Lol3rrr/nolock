@@ -1,4 +1,10 @@
-use std::{cell::UnsafeCell, mem::MaybeUninit, sync::Arc};
+use std::{
+    cell::UnsafeCell,
+    mem::MaybeUninit,
+    sync::{atomic, Arc},
+};
+
+use crate::queues::{DequeueError, EnqueueError};
 
 pub mod ncq;
 pub mod scq;
@@ -14,6 +20,10 @@ pub struct BoundedReceiver<T, UQ> {
     /// The Queue for all the free Indices at which no Data is stored and
     /// therefore can be used to store Data in
     fq: Arc<UQ>,
+    /// The Number of current Receivers
+    rx_count: Arc<atomic::AtomicU64>,
+    /// The Number of current Producers
+    tx_count: Arc<atomic::AtomicU64>,
 }
 /// The Sender Side of a generic MPMC-Queue, according to the related Paper, which allows for
 /// different implementations of the Underlying Queue for `aq` and `fq`
@@ -26,6 +36,10 @@ pub struct BoundedSender<T, UQ> {
     /// The Queue for all the free Indices at which no Data is stored and
     /// therefore can be used to store Data in
     fq: Arc<UQ>,
+    /// The Number of current Receivers
+    rx_count: Arc<atomic::AtomicU64>,
+    /// The Number of current Producers
+    tx_count: Arc<atomic::AtomicU64>,
 }
 
 /// This trait needs to be implemented by the Underlying-Queue that is used for
@@ -55,16 +69,24 @@ fn new_queue<T, UQ>(
     let aq_arc = Arc::new(aq);
     let fq_arc = Arc::new(fq);
 
+    let rx_count = Arc::new(atomic::AtomicU64::new(1));
+    let tx_count = Arc::new(atomic::AtomicU64::new(1));
+
     let rx = BoundedReceiver {
         data: data.clone(),
         aq: aq_arc.clone(),
         fq: fq_arc.clone(),
+        rx_count: rx_count.clone(),
+        tx_count: tx_count.clone(),
     };
     let tx = BoundedSender {
         data,
         aq: aq_arc,
         fq: fq_arc,
+        rx_count,
+        tx_count,
     };
+
     (rx, tx)
 }
 
@@ -116,11 +138,15 @@ where
     /// # Returns
     /// * `Ok(())` if the item was successfully enqueued
     /// * `Err(data)` if the Queue is full and the item could not be enqueued
-    pub fn try_enqueue(&self, data: T) -> Result<(), T> {
+    pub fn try_enqueue(&self, data: T) -> Result<(), (EnqueueError, T)> {
+        if self.rx_count.load(atomic::Ordering::Acquire) == 0 {
+            return Err((EnqueueError::Closed, data));
+        }
+
         // Attempt to get a free-Index to insert the data into
         let index = match self.fq.dequeue() {
             Some(i) => i,
-            None => return Err(data),
+            None => return Err((EnqueueError::Full, data)),
         };
 
         // Actually obtain the Bucket to insert into
@@ -145,14 +171,26 @@ where
     }
 }
 
+impl<T, UQ> Drop for BoundedSender<T, UQ> {
+    fn drop(&mut self) {
+        self.tx_count.fetch_sub(1, atomic::Ordering::AcqRel);
+    }
+}
+
 impl<T, UQ> BoundedReceiver<T, UQ>
 where
     UQ: UnderlyingQueue,
 {
-    pub fn dequeue(&self) -> Option<T> {
+    pub fn dequeue(&self) -> Result<T, DequeueError> {
         let index = match self.aq.dequeue() {
             Some(i) => i,
-            None => return None,
+            None => {
+                if self.tx_count.load(atomic::Ordering::Acquire) == 0 {
+                    return Err(DequeueError::Closed);
+                }
+
+                return Err(DequeueError::Empty);
+            }
         };
 
         let bucket = self
@@ -172,7 +210,13 @@ where
 
         self.fq.enqueue(index);
 
-        Some(data)
+        Ok(data)
+    }
+}
+
+impl<T, UQ> Drop for BoundedReceiver<T, UQ> {
+    fn drop(&mut self) {
+        self.rx_count.fetch_sub(1, atomic::Ordering::AcqRel);
     }
 }
 
@@ -185,64 +229,63 @@ mod tests {
         queue_ncq::<u64>(10);
     }
     #[test]
-    fn ncq_enqueue() {
-        let (_, tx) = queue_ncq::<u64>(10);
-
-        assert_eq!(Ok(()), tx.try_enqueue(15));
-    }
-    #[test]
-    fn ncq_dequeue() {
-        let (rx, _) = queue_ncq::<u64>(10);
-
-        assert_eq!(None, rx.dequeue());
-    }
-    #[test]
-    fn ncq_enqueue_dequeue() {
-        let (rx, tx) = queue_ncq::<u64>(10);
-
-        assert_eq!(Ok(()), tx.try_enqueue(15));
-        assert_eq!(Some(15), rx.dequeue());
-    }
-    #[test]
-    fn ncq_enqueue_dequeue_fill_multiple() {
-        let (rx, tx) = queue_ncq::<u64>(10);
-
-        for index in 0..(5 * 10) {
-            assert_eq!(Ok(()), tx.try_enqueue(index));
-            assert_eq!(Some(index), rx.dequeue());
-        }
-    }
-
-    #[test]
     fn scq_new() {
         queue_scq::<u64>(10);
     }
+
     #[test]
-    fn scq_enqueue() {
-        let (_, tx) = queue_scq::<u64>(10);
+    fn enqueue() {
+        let (rx, tx) = queue_ncq::<u64>(10);
 
         assert_eq!(Ok(()), tx.try_enqueue(15));
+        drop(rx);
     }
     #[test]
-    fn scq_dequeue() {
-        let (rx, _) = queue_scq::<u64>(10);
+    fn enqueue_full() {
+        let (rx, tx) = queue_ncq::<u64>(10);
 
-        assert_eq!(None, rx.dequeue());
+        for index in 0..10 {
+            assert_eq!(Ok(()), tx.try_enqueue(index));
+        }
+
+        assert_eq!(Err((EnqueueError::Full, 15)), tx.try_enqueue(15));
+        drop(rx);
     }
     #[test]
-    fn scq_enqueue_dequeue() {
-        let (rx, tx) = queue_scq::<u64>(10);
+    fn enqueue_closed() {
+        let (rx, tx) = queue_ncq::<u64>(10);
+
+        drop(rx);
+        assert_eq!(Err((EnqueueError::Closed, 15)), tx.try_enqueue(15));
+    }
+    #[test]
+    fn dequeue_empty() {
+        let (rx, tx) = queue_ncq::<u64>(10);
+
+        assert_eq!(Err(DequeueError::Empty), rx.dequeue());
+        drop(tx);
+    }
+    #[test]
+    fn dequeue_closed() {
+        let (rx, tx) = queue_ncq::<u64>(10);
+
+        drop(tx);
+        assert_eq!(Err(DequeueError::Closed), rx.dequeue());
+    }
+    #[test]
+    fn enqueue_dequeue() {
+        let (rx, tx) = queue_ncq::<u64>(10);
 
         assert_eq!(Ok(()), tx.try_enqueue(15));
-        assert_eq!(Some(15), rx.dequeue());
+        assert_eq!(Ok(15), rx.dequeue());
     }
     #[test]
-    fn scq_enqueue_dequeue_fill_multiple() {
-        let (rx, tx) = queue_scq::<u64>(10);
+    fn enqueue_dequeue_fill_multiple() {
+        let (rx, tx) = queue_ncq::<u64>(10);
 
         for index in 0..(5 * 10) {
             assert_eq!(Ok(()), tx.try_enqueue(index));
-            assert_eq!(Some(index), rx.dequeue());
+            assert_eq!(Ok(index), rx.dequeue());
         }
     }
 }

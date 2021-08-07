@@ -5,6 +5,11 @@
 
 mod queue;
 
+// TODO
+// * Add Support for detecting if a Queue has been closed by either side and then return the
+// corresponding errors for further operations
+// * Add the Unbounded version
+
 pub mod bounded {
     //! This contains the Collection of bounded-MPMC-Queues proposed in [the Paper](https://arxiv.org/pdf/1908.04511.pdf),
     //! however you should basically always use [`scq`] over [`ncq`] as it scales better and in
@@ -31,6 +36,8 @@ pub mod bounded {
         //! ```
 
         use std::fmt::Debug;
+
+        use crate::queues::{DequeueError, EnqueueError};
 
         use super::queue;
 
@@ -64,7 +71,7 @@ pub mod bounded {
             /// # Returns
             /// * `Ok(())` if the Data was successfully enqueued
             /// * `Err(data)` if the Queue was full at the Time of enqueuing the Data
-            pub fn try_enqueue(&self, data: T) -> Result<(), T> {
+            pub fn try_enqueue(&self, data: T) -> Result<(), (EnqueueError, T)> {
                 self.0.try_enqueue(data)
             }
         }
@@ -75,7 +82,7 @@ pub mod bounded {
             /// # Returns
             /// * `Some(data)` if there was an Item to dequeue
             /// * `None` if there was no Item to dequeue at the time of dequeuing
-            pub fn try_dequeue(&self) -> Option<T> {
+            pub fn try_dequeue(&self) -> Result<T, DequeueError> {
                 self.0.dequeue()
             }
         }
@@ -97,6 +104,8 @@ pub mod bounded {
         //! ```
 
         use std::fmt::Debug;
+
+        use crate::queues::{DequeueError, EnqueueError};
 
         use super::queue;
 
@@ -134,7 +143,7 @@ pub mod bounded {
             /// # Returns
             /// * `Ok(())` if the Data was successfully enqueued
             /// * `Err(data)` if the Queue is full and the Data could not be enqueued
-            pub fn try_enqueue(&self, data: T) -> Result<(), T> {
+            pub fn try_enqueue(&self, data: T) -> Result<(), (EnqueueError, T)> {
                 self.0.try_enqueue(data)
             }
         }
@@ -145,7 +154,7 @@ pub mod bounded {
             /// # Returns
             /// * `Some(item)` if there was an Item to dequeue
             /// * `None` if the Qeuue was empty at the Time of dequeuing
-            pub fn try_dequeue(&self) -> Option<T> {
+            pub fn try_dequeue(&self) -> Result<T, DequeueError> {
                 self.0.dequeue()
             }
         }
