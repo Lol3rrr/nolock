@@ -34,9 +34,9 @@ pub mod bounded {
 
         use super::queue;
 
-        /// TODO
+        /// The receiving Half for a NCQ based MPMC-Queue
         pub struct Receiver<T>(queue::BoundedReceiver<T, queue::ncq::Queue>);
-        /// TODO
+        /// The sending Half for a NCQ based MPMC-Queue
         pub struct Sender<T>(queue::BoundedSender<T, queue::ncq::Queue>);
 
         impl<T> Debug for Receiver<T> {
@@ -100,9 +100,9 @@ pub mod bounded {
 
         use super::queue;
 
-        /// TODO
+        /// The receiving Half for a SCQ based MPMC-Queue
         pub struct Receiver<T>(queue::BoundedReceiver<T, queue::scq::Queue>);
-        /// TODO
+        /// The sending Half for a SCQ based MPMC-Queue
         pub struct Sender<T>(queue::BoundedSender<T, queue::scq::Queue>);
 
         impl<T> Debug for Receiver<T> {

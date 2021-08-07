@@ -18,8 +18,13 @@ pub struct BoundedReceiver<T, UQ> {
 /// The Sender Side of a generic MPMC-Queue, according to the related Paper, which allows for
 /// different implementations of the Underlying Queue for `aq` and `fq`
 pub struct BoundedSender<T, UQ> {
+    /// The actual Buffer for all the Data-Entries
     data: Arc<Vec<UnsafeCell<MaybeUninit<T>>>>,
+    /// The "available"-Queue, contains all the Indices at which Data is currently
+    /// stored and can be read from
     aq: Arc<UQ>,
+    /// The Queue for all the free Indices at which no Data is stored and
+    /// therefore can be used to store Data in
     fq: Arc<UQ>,
 }
 
