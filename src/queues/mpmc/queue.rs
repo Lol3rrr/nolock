@@ -70,12 +70,12 @@ fn new_queue<T, UQ>(
 
 // Safety:
 // TODO
-unsafe impl<T, UQ> Sync for BoundedReceiver<T, UQ> {}
-unsafe impl<T, UQ> Sync for BoundedSender<T, UQ> {}
+unsafe impl<T, UQ> Sync for BoundedReceiver<T, UQ> where T: Sync {}
+unsafe impl<T, UQ> Sync for BoundedSender<T, UQ> where T: Sync {}
 // Safety:
 // TODO
-unsafe impl<T, UQ> Send for BoundedReceiver<T, UQ> {}
-unsafe impl<T, UQ> Send for BoundedSender<T, UQ> {}
+unsafe impl<T, UQ> Send for BoundedReceiver<T, UQ> where T: Send {}
+unsafe impl<T, UQ> Send for BoundedSender<T, UQ> where T: Send {}
 
 pub fn queue_ncq<T>(
     capacity: usize,
@@ -186,13 +186,13 @@ mod tests {
     }
     #[test]
     fn ncq_enqueue() {
-        let (rx, tx) = queue_ncq::<u64>(10);
+        let (_, tx) = queue_ncq::<u64>(10);
 
         assert_eq!(Ok(()), tx.try_enqueue(15));
     }
     #[test]
     fn ncq_dequeue() {
-        let (rx, tx) = queue_ncq::<u64>(10);
+        let (rx, _) = queue_ncq::<u64>(10);
 
         assert_eq!(None, rx.dequeue());
     }
@@ -219,13 +219,13 @@ mod tests {
     }
     #[test]
     fn scq_enqueue() {
-        let (rx, tx) = queue_scq::<u64>(10);
+        let (_, tx) = queue_scq::<u64>(10);
 
         assert_eq!(Ok(()), tx.try_enqueue(15));
     }
     #[test]
     fn scq_dequeue() {
-        let (rx, tx) = queue_scq::<u64>(10);
+        let (rx, _) = queue_scq::<u64>(10);
 
         assert_eq!(None, rx.dequeue());
     }
