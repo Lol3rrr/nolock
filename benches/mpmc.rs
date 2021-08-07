@@ -6,11 +6,11 @@ pub fn ncq_enqueue_dequeue(ctx: &mut Criterion) {
     group.throughput(Throughput::Elements(2));
 
     group.bench_function("enqueue-dequeue", |b| {
-        let queue = nolock::queues::mpmc::bounded::ncq::queue::<u64>(10);
+        let (rx, tx) = nolock::queues::mpmc::bounded::ncq::queue::<u64>(10);
 
         b.iter(|| {
-            let _ = queue.try_enqueue(black_box(13));
-            assert_eq!(Some(13), queue.try_dequeue());
+            let _ = tx.try_enqueue(black_box(13));
+            assert_eq!(Some(13), rx.try_dequeue());
         });
     });
 }
@@ -21,11 +21,11 @@ pub fn scq_enqueue_dequeue(ctx: &mut Criterion) {
     group.throughput(Throughput::Elements(2));
 
     group.bench_function("enqueue-dequeue", |b| {
-        let queue = nolock::queues::mpmc::bounded::scq::queue::<u64>(10);
+        let (rx, tx) = nolock::queues::mpmc::bounded::scq::queue::<u64>(10);
 
         b.iter(|| {
-            let _ = queue.try_enqueue(black_box(13));
-            assert_eq!(Some(13), queue.try_dequeue());
+            let _ = tx.try_enqueue(black_box(13));
+            assert_eq!(Some(13), rx.try_dequeue());
         });
     });
 }
