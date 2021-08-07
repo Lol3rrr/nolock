@@ -320,7 +320,7 @@ pub mod bounded {
             /// # Example
             /// ```rust
             /// # use nolock::queues::mpmc::bounded::scq;
-            /// let (rx, tx) = cq::queue::<u64>(10);
+            /// let (rx, tx) = scq::queue::<u64>(10);
             ///
             /// assert_eq!(false, rx.is_closed());
             ///
