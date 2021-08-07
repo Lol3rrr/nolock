@@ -10,15 +10,34 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Run tests
-      run: cargo test
+      - name: Check out
+        uses: actions/checkout@v2
+      - name: Setting up Rust-Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          default: true
+          override: true
+      - name: Run tests
+        run: cargo test
+
   clippy:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Run Clippy
-      run: cargo clippy --
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Setting up Rust-Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: clippy
+          default: true
+          override: true
+      - name: Run Clippy
+        run: cargo clippy --
+
   miri_queues:
     name: Test Queues (Miri)
     runs-on: ubuntu-latest
