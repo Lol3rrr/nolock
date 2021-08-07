@@ -14,6 +14,19 @@ pub mod bounded {
     //! This contains the Collection of bounded-MPMC-Queues proposed in [the Paper](https://arxiv.org/pdf/1908.04511.pdf),
     //! however you should basically always use [`scq`] over [`ncq`] as it scales better and in
     //! general is the intended implementation.
+    //!
+    //! # Example
+    //! ```rust
+    //! # use nolock::queues::mpmc::bounded;
+    //! // Creates a new Queue with the Capacity for 10 Elements
+    //! let (rx, tx) = bounded::scq::queue::<u64>(10);
+    //!
+    //! // Insert a new Element into the Queue
+    //! assert_eq!(Ok(()), tx.try_enqueue(123));
+    //! // Dequeue the Element again
+    //! assert_eq!(Ok(123), rx.try_dequeue());
+    //! ```
+
     use super::queue;
 
     pub mod ncq {
