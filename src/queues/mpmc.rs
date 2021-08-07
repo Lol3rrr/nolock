@@ -103,6 +103,25 @@ pub mod bounded {
             pub fn try_enqueue(&self, data: T) -> Result<(), (EnqueueError, T)> {
                 self.0.try_enqueue(data)
             }
+
+            /// Checks if the Receiving Half has closed the Queue, meaning that
+            /// no more Elements would be dequeued from the Queue and therefore
+            /// also should not be inserted anymore.
+            ///
+            /// # Example
+            /// ```rust
+            /// # use nolock::queues::mpmc::bounded::ncq;
+            /// let (rx, tx) = ncq::queue::<u64>(10);
+            ///
+            /// assert_eq!(false, tx.is_closed());
+            ///
+            /// drop(rx);
+            ///
+            /// assert_eq!(true, tx.is_closed());
+            /// ```
+            pub fn is_closed(&self) -> bool {
+                self.0.is_closed()
+            }
         }
 
         impl<T> Receiver<T> {
@@ -133,6 +152,31 @@ pub mod bounded {
             /// ```
             pub fn try_dequeue(&self) -> Result<T, DequeueError> {
                 self.0.dequeue()
+            }
+
+            /// Checks if the Sending Half has closed the Queue, meaning that
+            /// no more new Elements will be added to the Queue.
+            ///
+            /// # Note
+            /// Even if this indicates that the Queue has been closed, by the
+            /// Sender and no more new Elements will be inserted into the Queue,
+            /// there might still be Elements left in the Queue that are waiting
+            /// to be dequeued.
+            ///
+            /// # Example
+            /// ```rust
+            /// # use nolock::queues::mpmc::bounded::ncq;
+            /// let (rx, tx) = ncq::queue::<u64>(10);
+            ///
+            /// assert_eq!(false, rx.is_closed());
+            ///
+            /// tx.try_enqueue(13).unwrap();
+            /// drop(tx);
+            ///
+            /// assert_eq!(true, rx.is_closed());
+            /// ```
+            pub fn is_closed(&self) -> bool {
+                self.0.is_closed()
             }
         }
     }
@@ -213,6 +257,25 @@ pub mod bounded {
             pub fn try_enqueue(&self, data: T) -> Result<(), (EnqueueError, T)> {
                 self.0.try_enqueue(data)
             }
+
+            /// Checks if the Receiving Half has closed the Queue, meaning that
+            /// no more Elements would be dequeued from the Queue and therefore
+            /// also should not be inserted anymore.
+            ///
+            /// # Example
+            /// ```rust
+            /// # use nolock::queues::mpmc::bounded::scq;
+            /// let (rx, tx) = scq::queue::<u64>(10);
+            ///
+            /// assert_eq!(false, tx.is_closed());
+            ///
+            /// drop(rx);
+            ///
+            /// assert_eq!(true, tx.is_closed());
+            /// ```
+            pub fn is_closed(&self) -> bool {
+                self.0.is_closed()
+            }
         }
 
         impl<T> Receiver<T> {
@@ -243,6 +306,31 @@ pub mod bounded {
             /// ```
             pub fn try_dequeue(&self) -> Result<T, DequeueError> {
                 self.0.dequeue()
+            }
+
+            /// Checks if the Sending Half has closed the Queue, meaning that
+            /// no more new Elements will be added to the Queue.
+            ///
+            /// # Note
+            /// Even if this indicates that the Queue has been closed, by the
+            /// Sender and no more new Elements will be inserted into the Queue,
+            /// there might still be Elements left in the Queue that are waiting
+            /// to be dequeued.
+            ///
+            /// # Example
+            /// ```rust
+            /// # use nolock::queues::mpmc::bounded::scq;
+            /// let (rx, tx) = cq::queue::<u64>(10);
+            ///
+            /// assert_eq!(false, rx.is_closed());
+            ///
+            /// tx.try_enqueue(13).unwrap();
+            /// drop(tx);
+            ///
+            /// assert_eq!(true, rx.is_closed());
+            /// ```
+            pub fn is_closed(&self) -> bool {
+                self.0.is_closed()
             }
         }
     }

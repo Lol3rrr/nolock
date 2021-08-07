@@ -25,6 +25,7 @@ pub struct BoundedReceiver<T, UQ> {
     /// The Number of current Producers
     tx_count: Arc<atomic::AtomicU64>,
 }
+
 /// The Sender Side of a generic MPMC-Queue, according to the related Paper, which allows for
 /// different implementations of the Underlying Queue for `aq` and `fq`
 pub struct BoundedSender<T, UQ> {
@@ -139,7 +140,7 @@ where
     /// * `Ok(())` if the item was successfully enqueued
     /// * `Err(data)` if the Queue is full and the item could not be enqueued
     pub fn try_enqueue(&self, data: T) -> Result<(), (EnqueueError, T)> {
-        if self.rx_count.load(atomic::Ordering::Acquire) == 0 {
+        if self.is_closed() {
             return Err((EnqueueError::Closed, data));
         }
 
@@ -169,6 +170,11 @@ where
         self.aq.enqueue(index);
         Ok(())
     }
+
+    /// Checks if the Receiving Half of the Queue has been closed
+    pub fn is_closed(&self) -> bool {
+        self.rx_count.load(atomic::Ordering::Acquire) == 0
+    }
 }
 
 impl<T, UQ> Drop for BoundedSender<T, UQ> {
@@ -185,7 +191,7 @@ where
         let index = match self.aq.dequeue() {
             Some(i) => i,
             None => {
-                if self.tx_count.load(atomic::Ordering::Acquire) == 0 {
+                if self.is_closed() {
                     return Err(DequeueError::Closed);
                 }
 
@@ -211,6 +217,11 @@ where
         self.fq.enqueue(index);
 
         Ok(data)
+    }
+
+    /// Checks if the Sending Half of the Queue has been closed
+    pub fn is_closed(&self) -> bool {
+        self.tx_count.load(atomic::Ordering::Acquire) == 0
     }
 }
 
@@ -287,5 +298,24 @@ mod tests {
             assert_eq!(Ok(()), tx.try_enqueue(index));
             assert_eq!(Ok(index), rx.dequeue());
         }
+    }
+
+    #[test]
+    fn receiver_closed() {
+        let (rx, tx) = queue_ncq::<u64>(10);
+
+        assert_eq!(false, rx.is_closed());
+
+        drop(tx);
+        assert_eq!(true, rx.is_closed());
+    }
+    #[test]
+    fn sending_closed() {
+        let (rx, tx) = queue_ncq::<u64>(10);
+
+        assert_eq!(false, tx.is_closed());
+
+        drop(rx);
+        assert_eq!(true, tx.is_closed());
     }
 }
