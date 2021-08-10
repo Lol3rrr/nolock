@@ -11,7 +11,7 @@ use crate::queues::mpsc::jiffy;
 use super::{record::Record, retire_node::RetireNode, Guard};
 
 /// A Thread-Local instance to interact with a single Hazard-Pointer-Domain
-pub struct Domain {
+pub struct TLDomain {
     /// The Refernce to the Shared-Global State for the Hazard-Pointer-Domain
     global: Arc<DomainGlobal>,
 
@@ -24,16 +24,18 @@ pub struct Domain {
     /// The List of Memory-Nodes marked as being ready to retire, by the
     /// algorithm, that have not yet been reclaimed and may still be in use
     /// by some other Part of the overall system
-    r_list: Vec<RetireNode<()>>,
+    r_list: Vec<RetireNode>,
 }
 
-impl Debug for Domain {
+unsafe impl Send for TLDomain {}
+
+impl Debug for TLDomain {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Domain ()")
     }
 }
 
-impl Drop for Domain {
+impl Drop for TLDomain {
     fn drop(&mut self) {
         // TODO
         // This should (at least try to) reclaim all the current
@@ -45,7 +47,7 @@ impl Drop for Domain {
     }
 }
 
-impl Domain {
+impl TLDomain {
     /// Creates a new Domain with the given shared Global and reclaim Threshold
     pub fn new(global: Arc<DomainGlobal>, reclaim_threshold: usize) -> Self {
         let (rx, tx) = jiffy::queue();

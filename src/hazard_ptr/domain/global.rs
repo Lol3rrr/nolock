@@ -32,20 +32,21 @@ impl DomainGlobal {
         if ptr.is_null() {
             return plist;
         }
-        let mut current_item = ManuallyDrop::new(unsafe { Box::from_raw(ptr) });
+
+        let mut current = unsafe { &*ptr };
 
         loop {
-            let ptr_val = current_item.ptr.load(atomic::Ordering::SeqCst);
+            let ptr_val = current.ptr.load(atomic::Ordering::SeqCst);
             if !ptr_val.is_null() {
                 plist.insert(ptr_val as *const ());
             }
 
-            match current_item.load_next(atomic::Ordering::SeqCst) {
-                Some(i) => {
-                    current_item = i;
-                }
-                None => break,
-            };
+            let next_ptr = current.next.load(atomic::Ordering::SeqCst);
+            if next_ptr.is_null() {
+                break;
+            }
+
+            current = unsafe { &*next_ptr };
         }
 
         plist
@@ -100,5 +101,50 @@ impl DomainGlobal {
 impl Drop for DomainGlobal {
     fn drop(&mut self) {
         println!("Dropped Global");
+
+        // TODO
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn append_load_hazards() {
+        let global = DomainGlobal::new();
+
+        {
+            let expected = HashSet::new();
+            assert_eq!(expected, global.get_protections());
+        }
+
+        let record_ptr = Box::into_raw(Record::<u64>::boxed_empty());
+        global.append_record(record_ptr as *mut Record<()>);
+
+        {
+            let expected = HashSet::new();
+            assert_eq!(expected, global.get_protections());
+        }
+
+        let record = unsafe { &*record_ptr };
+        record
+            .ptr
+            .store(0x123 as *mut u64, atomic::Ordering::SeqCst);
+
+        {
+            let mut expected = HashSet::new();
+            expected.insert(0x123 as *const ());
+            assert_eq!(expected, global.get_protections());
+        }
+
+        record
+            .ptr
+            .store(std::ptr::null_mut(), atomic::Ordering::SeqCst);
+
+        {
+            let expected = HashSet::new();
+            assert_eq!(expected, global.get_protections());
+        }
     }
 }

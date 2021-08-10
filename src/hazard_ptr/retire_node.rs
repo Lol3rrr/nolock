@@ -1,15 +1,15 @@
 /// The RetireNode stores a single Pointer to retire as well as the function
 /// that should be used to retire the given Piece of Data savely
-pub struct RetireNode<T> {
+pub struct RetireNode {
     /// The Data-Pointer that should be retired eventually
-    pub ptr: *mut T,
+    pub ptr: *mut (),
     /// The Function used to actually retire the Data
-    retire_fn: Box<dyn Fn(*mut T)>,
+    retire_fn: Box<dyn Fn(*mut ())>,
 }
 
-impl<T> RetireNode<T> {
+impl RetireNode {
     /// Creates a new RetireNode with the given Data
-    pub fn new(ptr: *mut T, func: Box<dyn Fn(*mut T)>) -> Self {
+    pub fn new(ptr: *mut (), func: Box<dyn Fn(*mut ())>) -> Self {
         Self {
             ptr,
             retire_fn: func,

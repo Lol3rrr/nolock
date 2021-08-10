@@ -15,14 +15,15 @@ categories = ["concurrency", "data-structures"]
 [features]
 default = ["full"]
 queues = []
-hazard_ptr = ["queues", "lazy_static"]
+hazard_ptr = ["queues", "lazy_static", "thread_local"]
 hash_trie = ["hazard_ptr"]
 async = ["futures"]
-full = ["queues", "async"]
+full = ["queues", "async", "hazard_ptr"]
 
 [dependencies]
 futures = { version = "0.3", optional = true, default_features = false }
 lazy_static = { version = "1.4", optional = true }
+thread_local = { version = "1.1", optional = true }
 
 [dev-dependencies]
 rand = { version = "0.8" }
