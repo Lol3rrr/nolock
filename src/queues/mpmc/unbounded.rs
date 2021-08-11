@@ -83,14 +83,14 @@ impl<T> Sender<T> {
     /// TODO
     pub fn enqueue(&self, mut data: T) -> Result<(), T> {
         loop {
-            if self.is_closed() {
-                return Err(data);
-            }
-
             let tail = self
                 .hazard_domain
                 .protect(&self.tail, atomic::Ordering::Acquire);
             let tail_ptr = tail.raw() as *mut BoundedQueue<T>;
+
+            if self.is_closed() {
+                return Err(data);
+            }
 
             let next_ptr = tail.next.load(atomic::Ordering::Acquire);
             if !next_ptr.is_null() {
@@ -130,6 +130,7 @@ impl<T> Sender<T> {
                         atomic::Ordering::AcqRel,
                         atomic::Ordering::Relaxed,
                     );
+                    println!("New-Queue");
                     return Ok(());
                 }
                 Err(_) => {
@@ -196,6 +197,7 @@ impl<T> Receiver<T> {
                 .is_ok()
             {
                 self.hazard_domain.retire(head_ptr, |ptr| {
+                    println!("[Queue] Free-Queue");
                     let boxed = unsafe { Box::from_raw(ptr) };
                     drop(boxed);
                 });
@@ -211,6 +213,27 @@ impl<T> Receiver<T> {
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
         self.rx_count.fetch_sub(1, atomic::Ordering::AcqRel);
+
+        let mut current_ptr = self.head.load(atomic::Ordering::SeqCst);
+        let mut current = unsafe { &*current_ptr };
+
+        loop {
+            let next_ptr = current.next.load(atomic::Ordering::SeqCst);
+
+            self.hazard_domain.retire(current_ptr, |ptr| {
+                println!("[Drop] Free-Queue");
+                let boxed = unsafe { Box::from_raw(ptr) };
+                drop(boxed);
+            });
+
+            if next_ptr.is_null() {
+                break;
+            }
+            current_ptr = next_ptr;
+            current = unsafe { &*current_ptr };
+        }
+
+        self.hazard_domain.reclaim();
     }
 }
 

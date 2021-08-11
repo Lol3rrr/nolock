@@ -1,5 +1,4 @@
 use std::fmt::Debug;
-use std::mem::ManuallyDrop;
 
 use std::ops::Deref;
 use std::sync::{atomic, Arc};
@@ -28,14 +27,19 @@ impl<T> Debug for Guard<T> {
 
 impl<T> Drop for Guard<T> {
     fn drop(&mut self) {
-        let record = ManuallyDrop::new(unsafe { Box::from_raw(self.record) });
+        let record = unsafe { &*self.record };
         record.reset();
 
         // TODO
         // We can "savely" ignore this Result because even if we detect a
         // failure in this case, there is nothing we can really do about it...
         // I think?
-        let _ = self.record_returner.enqueue(self.record);
+        match self.record_returner.enqueue(self.record) {
+            Ok(_) => {}
+            Err((ptr, e)) => {
+                println!("Returning Record: {:?}", e);
+            }
+        };
     }
 }
 
@@ -72,7 +76,7 @@ impl<T> Guard<T> {
     /// only have one Node you are currently processing and then move on
     /// to another one.
     pub fn protect(&mut self, atom_ptr: &atomic::AtomicPtr<T>, load_order: atomic::Ordering) {
-        let record = ManuallyDrop::new(unsafe { Box::from_raw(self.record) });
+        let record = unsafe { &*self.record };
         let mut protect_ptr = atom_ptr.load(load_order);
         loop {
             record

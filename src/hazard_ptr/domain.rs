@@ -37,6 +37,8 @@ impl Debug for TLDomain {
 
 impl Drop for TLDomain {
     fn drop(&mut self) {
+        println!("Dropped TL-Domain");
+
         // TODO
         // This should (at least try to) reclaim all the current
         // Elements in the R-List, as this would otherwise result

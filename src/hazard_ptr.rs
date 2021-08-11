@@ -25,6 +25,8 @@ pub use domain::{DomainGlobal, TLDomain};
 mod guard;
 pub use guard::Guard;
 
+use crate::thread_data::ThreadData;
+
 /// This macro can be used to generate all the needed parts for a new
 /// Hazard-Pointer Domain.
 /// This domain will then be available as a private module, with the provided
@@ -156,7 +158,7 @@ macro_rules! create_hazard_domain {
 #[derive(Clone)]
 pub struct Domain {
     global: Arc<DomainGlobal>,
-    local: Arc<thread_local::ThreadLocal<RefCell<TLDomain>>>,
+    local: Arc<ThreadData<RefCell<TLDomain>>>,
     reclaim_threshold: usize,
 }
 
@@ -176,7 +178,7 @@ impl Domain {
     pub fn new() -> Self {
         Self {
             global: Arc::new(DomainGlobal::new()),
-            local: Arc::new(thread_local::ThreadLocal::new()),
+            local: Arc::new(ThreadData::new()),
             reclaim_threshold: 10,
         }
     }
@@ -237,41 +239,11 @@ impl Domain {
     }
 }
 
-create_hazard_domain!(default);
-pub use default::*;
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use std::sync::atomic;
-
-    #[test]
-    fn protect_memory() {
-        let raw_ptr = Box::into_raw(Box::new(15));
-        let shared_ptr = atomic::AtomicPtr::new(raw_ptr);
-
-        let guard = protect(&shared_ptr, atomic::Ordering::SeqCst);
-
-        assert_eq!(15, *guard);
-
-        retire(raw_ptr, |ptr| {
-            let boxed = unsafe { Box::from_raw(ptr) };
-            drop(boxed);
-        });
-
-        assert_eq!(15, *guard);
-
-        drop(guard);
-
-        let other_raw_ptr = Box::into_raw(Box::new(16));
-        shared_ptr.store(other_raw_ptr, atomic::Ordering::SeqCst);
-
-        retire(other_raw_ptr, |ptr| {
-            let boxed = unsafe { Box::from_raw(ptr) };
-            drop(boxed);
-        });
-    }
 
     #[derive(Debug, Clone)]
     struct DropCheck {

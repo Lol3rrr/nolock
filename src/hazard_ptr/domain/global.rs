@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Debug, mem::ManuallyDrop, sync::atomic};
+use std::{collections::HashSet, fmt::Debug, sync::atomic};
 
 use crate::hazard_ptr::Record;
 
@@ -71,7 +71,7 @@ impl DomainGlobal {
 
         let mut last_record = {
             let ptr = self.records.load(atomic::Ordering::SeqCst);
-            ManuallyDrop::new(unsafe { Box::from_raw(ptr) })
+            unsafe { &*ptr }
         };
         loop {
             match last_record.load_next(atomic::Ordering::SeqCst) {
@@ -106,6 +106,8 @@ impl DomainGlobal {
         let mut current = unsafe { Box::from_raw(current_ptr) };
         loop {
             let next_ptr = current.next.load(atomic::Ordering::SeqCst);
+            drop(current);
+
             if next_ptr.is_null() {
                 return;
             }

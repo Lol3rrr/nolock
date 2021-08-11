@@ -1,4 +1,4 @@
-use std::{fmt::Debug, mem::ManuallyDrop, sync::atomic};
+use std::{fmt::Debug, sync::atomic};
 
 /// A single Record in the List of Hazard-Pointer-Records
 pub struct Record<T> {
@@ -22,13 +22,13 @@ impl<T> Record<T> {
     /// Attempts to load the next Element in the Linked-List of Records,
     /// returns None if the Next-Ptr was Null at the Time of reading it,
     /// which might have changed in the mean time
-    pub fn load_next(&self, order: atomic::Ordering) -> Option<ManuallyDrop<Box<Self>>> {
+    pub fn load_next(&self, order: atomic::Ordering) -> Option<&Self> {
         let ptr = self.next.load(order);
         if ptr.is_null() {
             return None;
         }
 
-        Some(ManuallyDrop::new(unsafe { Box::from_raw(ptr) }))
+        Some(unsafe { &*ptr })
     }
 
     /// This resets the Hazard-Record to its empty initial State, where it
