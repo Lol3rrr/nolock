@@ -5,11 +5,12 @@
 //! # Feature-Flags
 //! * `queues`: Enables all the Queues
 //! * `async`: Enables all the Async-Version of the Algorithms/Datastructures
+//! * `thread_data`: Enables the ThreadData Module
+//! * `hazard_ptr`: Enables the Hazard-Ptr implementation
 //! * `full`: Enables all the Feature-Flags
 //!
 //! # Experimental-Feature-Flags
 //! * `hash_trie`: Enables the Hash-Trie-Map implementation
-//! * `hazard_ptr`: Enables the Hazard-Ptr implementation
 
 #[cfg(feature = "hash_trie")]
 pub mod hash_trie;

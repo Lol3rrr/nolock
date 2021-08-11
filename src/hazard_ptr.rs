@@ -20,141 +20,34 @@ use record::Record;
 mod retire_node;
 
 mod domain;
-pub use domain::{DomainGlobal, TLDomain};
+use domain::{DomainGlobal, TLDomain};
 
 mod guard;
 pub use guard::Guard;
 
 use crate::thread_data::ThreadData;
 
-/// This macro can be used to generate all the needed parts for a new
-/// Hazard-Pointer Domain.
-/// This domain will then be available as a private module, with the provided
-/// Domain-Name.
+/// A Hazard-Pointer-Domain that can be used either globally as a shared Domain
+/// or as a per Object Domain to seperate the Domains of different Instances of
+/// Objects.
 ///
-/// # Domains:
-/// A Hazard-Domain helps to seperate different parts of your system that
-/// do not share memory and therefore are not relevant, safety wise, for
-/// other parts in the System and seperating the Hazard-Pointers by Domain
-/// can then help with Performance, as they only need to check the
-/// Hazard-Pointers relevant to their Domain.
+/// # What is a Hazard-Pointer-Domain
+/// A Hazard-Pointer-Domain is a collection of Hazard-Pointers and allows you
+/// to seperate different Parts of a System, where you know that they dont need
+/// access to the Hazard-Pointers of other Parts.
+/// This could lead to performance improvements as all the Parts only check the
+/// Hazard-Pointers that are actually relevant for them.
 ///
-/// # Example:
-/// Creates a new Domain called `demo_domain` and then uses it to protect
-/// an AtomicPtr and give save access to it;
-///
-/// ```ignore
-/// // Creates a module named `demo_domain` and all the Hazard-Pointer parts
-/// // are exposed in that module
-/// create_hazard_domain!(demo_domain);
-///
-/// # use std::sync::atomic;
-/// # let boxed_ptr: *mut u8 = Box::into_raw(Box::new(13));
-/// # let atomic_ptr = atomic::AtomicPtr::new(boxed_ptr);
-///
-/// // Actually use the new Hazard-Pointer-Domain
-/// let guard = demo_domain::protect(
-///     &atomic_ptr,
-///     atomic::Ordering::SeqCst,
-///     atomic::Ordering::SeqCst
-/// );
-/// println!("Value in the Guard: {}", *guard);
-/// ```
-#[macro_export]
-macro_rules! create_hazard_domain {
-    ($domain_name:ident) => {
-        mod $domain_name {
-            use crate::hazard_ptr::{TLDomain, DomainGlobal, Guard};
-            use std::{
-                cell::RefCell,
-                sync::{atomic, Arc},
-            };
-
-            use lazy_static::lazy_static;
-
-            lazy_static! {
-                static ref SUB_GLOBAL: Arc<DomainGlobal> = Arc::new(DomainGlobal::new());
-            }
-
-            thread_local! {
-                static SUB_DOMAIN: RefCell<TLDomain> = RefCell::new(TLDomain::new(SUB_GLOBAL.clone(), 10));
-            }
-
-            /// This functions protects whatever memory address is stored in
-            /// the Atomic-Ptr from being freed, while the Guard is still in
-            /// use, indicating that the memory is still needed.
-            ///
-            /// # Behaviour
-            /// This function reads the Atomic-Ptr at least 2-times to make
-            /// sure that the Ptr was not invalidated before the Hazard has
-            /// been updated accordingly.
-            ///
-            /// # Returns
-            /// The Guard returned by this value protects the underlying Memory
-            /// as long as it exists and gives you read-only access to
-            /// the value stored there
-            pub fn protect<T>(
-                atom_ptr: &atomic::AtomicPtr<T>,
-                load_order: atomic::Ordering,
-            ) -> Guard<T> {
-                SUB_DOMAIN.with(|shared_domain| {
-                    let mut mut_shared = shared_domain.borrow_mut();
-                    mut_shared.protect(atom_ptr, load_order)
-                })
-            }
-
-            /// TODO
-            pub fn empty_guard<T>() -> Guard<T> {
-                SUB_DOMAIN.with(|shared_domain| {
-                    let mut mut_shared = shared_domain.borrow_mut();
-                    mut_shared.empty_guard()
-                })
-            }
-
-            /// This function is used to reclaim a piece of memory, once it is
-            /// no longer in use by any other Thread. Once it is determined
-            /// that the given Address is no longer used by any other Thread,
-            /// the provided `retire_fn` function will be called with the given
-            /// Address to then properly reclaim the piece of memory.
-            ///
-            /// This function does not provide any garantue about when the
-            /// memory will be reclaimed, as there is no way to predict when
-            /// the memory will not be used anymore
-            pub fn retire<T, F>(ptr: *mut T, retire_fn: F)
-            where
-                F: Fn(*mut T) + 'static,
-            {
-                SUB_DOMAIN.with(|shared_domain| {
-                    let mut mut_shared = shared_domain.borrow_mut();
-                    mut_shared
-                        .retire_node(ptr as *mut (), move |raw_ptr| retire_fn(raw_ptr as *mut T));
-                })
-            }
-
-            /// Forces a reclaimation attempt to be performed. However this
-            /// does not garantue that any nodes are actually reclaimed as
-            /// there might be no unused Node.
-            ///
-            /// # Usage
-            /// This function does not need to be called, as the reclaimation
-            /// will be performed automatically once a certain number of items
-            /// are waiting to be reclaimed.
-            /// However this function might help to improve the Performance of
-            /// your Program, as you can call this at a time where you can
-            /// spare the Cost of reclaimation without hindering the rest of
-            /// the System and therfore help to prevent the reclaimation to
-            /// happen in the critical Hot-Path of your Program
-            pub fn reclaim() {
-                SUB_DOMAIN.with(|shared_domain| {
-                    let mut mut_shared = shared_domain.borrow_mut();
-                    mut_shared.reclaim();
-                });
-            }
-        }
-    };
-}
-
-/// TODO
+/// # Where to use a different Hazard-Pointer-Domain
+/// Like previously mentioned different Domains are useful to seperate an
+/// entire System into smaller Parts, however there are also other cases where
+/// having a custom Domain can be useful.
+/// ## Seperating Datastructure Instances
+/// Having seperate Domains for individual Datastructures can help with
+/// Performance, because for example if you have two Lists and they were to
+/// share a single Domain, List 1 has to check the Hazard-Pointers for List 2
+/// everytime it needs to work with Hazard-Pointers although they are not
+/// relevant in that Case.
 #[derive(Clone)]
 pub struct Domain {
     global: Arc<DomainGlobal>,
@@ -173,13 +66,16 @@ impl Debug for Domain {
 }
 
 impl Domain {
-    /// Creates a new Domain, which is seperate from other Domains. To get a
-    /// Handle to an existing Domain, simply clone the other instance.
-    pub fn new() -> Self {
+    /// Creates a new Hazard-Pointer-Domain
+    ///
+    /// # Params
+    /// `reclaim_threshold`: The Threshold for waiting Items before attempting
+    /// to reclaim Memory
+    pub fn new(reclaim_threshold: usize) -> Self {
         Self {
             global: Arc::new(DomainGlobal::new()),
             local: Arc::new(ThreadData::new()),
-            reclaim_threshold: 10,
+            reclaim_threshold,
         }
     }
 
@@ -195,6 +91,29 @@ impl Domain {
     /// Returns you a Guard through which you can interact with the Data loaded
     /// from the AtomicPtr and as long as the Guard lives, the Data is safe
     /// to access and use
+    ///
+    /// # Example
+    /// ```rust
+    /// # use nolock::hazard_ptr;
+    /// # use std::sync::atomic;
+    /// let domain = hazard_ptr::Domain::new(10);
+    ///
+    /// // Create an AtomicPtr with some Value
+    /// let ptr = Box::into_raw(Box::new(13));
+    /// let atom_ptr = atomic::AtomicPtr::new(ptr);
+    ///
+    /// // Get protected Access to the Value pointed to
+    /// let guarded = domain.protect(&atom_ptr, atomic::Ordering::SeqCst);
+    /// // Access the inner Value
+    /// assert_eq!(13, *guarded);
+    ///
+    /// // Retire/"Free" the Data
+    /// domain.retire(ptr, |p| { unsafe { Box::from_raw(p) }; });
+    ///
+    /// // As long as we still have the Guard, the Data will not actually be
+    /// // reclaimed and can still be used safely
+    /// assert_eq!(13, *guarded);
+    /// ```
     pub fn protect<T>(
         &self,
         atom_ptr: &atomic::AtomicPtr<T>,
@@ -218,6 +137,13 @@ impl Domain {
     /// Marks the given Ptr as retired and once no more Hazard-Ptrs protect
     /// the same Ptr, the given `retire_fn` function will be called to
     /// properly clean up the Data.
+    ///
+    /// # Note
+    /// There is no garantue as to when the given Ptr will actually be retired
+    /// using the given function, because the Hazard-Pointer that protects the
+    /// Data may be stored somewhere or the Thread that was responsible for it
+    /// crashed/wont respond/is not running again and therefore can not mark it
+    /// as unused anymore.
     pub fn retire<T, F>(&self, ptr: *mut T, retire_fn: F)
     where
         F: Fn(*mut T) + 'static,
@@ -231,6 +157,13 @@ impl Domain {
     /// Forces a reclaimation cycle, however this does not garantue that any
     /// Nodes/Ptrs will actually be reclaimed, as they might all still be
     /// protected/in use
+    ///
+    /// # Use Cases
+    /// This might be useful in a very performance sensitive application, where
+    /// you want to avoid running the Reclaimation while in a Hot-Path.
+    /// In these Cases, you can set the reclaimation threshold to a very large
+    /// Value when creating the Domain, as to avoid triggering it by accident,
+    /// and then call this function manually outside of the Hot-Path.
     pub fn reclaim(&self) {
         let local = self.get_local();
 
@@ -268,7 +201,7 @@ mod tests {
     #[test]
     fn local_domain_protect() {
         let drop_chk = DropCheck::new();
-        let domain = Arc::new(Domain::new());
+        let domain = Arc::new(Domain::new(10));
 
         let raw_ptr = Box::into_raw(Box::new(drop_chk.clone()));
         let shared_ptr = atomic::AtomicPtr::new(raw_ptr);

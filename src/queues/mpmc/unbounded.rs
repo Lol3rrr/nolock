@@ -61,7 +61,7 @@ pub fn queue<T>() -> (Receiver<T>, Sender<T>) {
     let rx_count = Arc::new(atomic::AtomicU64::new(1));
     let tx_count = Arc::new(atomic::AtomicU64::new(1));
 
-    let hazard_domain = Arc::new(hazard_ptr::Domain::new());
+    let hazard_domain = Arc::new(hazard_ptr::Domain::new(5));
 
     let rx = Receiver {
         head,
