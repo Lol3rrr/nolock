@@ -522,7 +522,20 @@ impl<T> Debug for Receiver<T> {
 
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
-        close_side(&self.closed, || self.head_of_queue as *mut BufferList<T>);
+        close_side(&self.closed, || {
+            let mut current_ptr = self.head_of_queue;
+            let mut current = unsafe { &*current_ptr };
+
+            loop {
+                let next_ptr = current.next.load(atomic::Ordering::SeqCst);
+                if next_ptr.is_null() {
+                    return current_ptr;
+                }
+
+                current_ptr = next_ptr;
+                current = unsafe { &*current_ptr };
+            }
+        });
     }
 }
 
@@ -631,6 +644,18 @@ mod tests {
 
         assert_eq!(Ok(13), rx.try_dequeue());
         assert_eq!(Err(DequeueError::Closed), rx.try_dequeue());
+    }
+
+    #[test]
+    fn enqueue_some_close() {
+        let (rx, tx) = queue::<usize>();
+
+        for index in 0..10 {
+            tx.enqueue(index).unwrap();
+        }
+
+        drop(tx);
+        drop(rx);
     }
 
     #[test]
