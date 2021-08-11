@@ -64,5 +64,9 @@ mod tests {
 
         let next_result = record.load_next(atomic::Ordering::SeqCst);
         assert_eq!(true, next_result.is_some());
+
+        {
+            unsafe { Box::from_raw(next_record_ptr) };
+        }
     }
 }

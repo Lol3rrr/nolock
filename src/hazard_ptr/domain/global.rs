@@ -96,13 +96,29 @@ impl DomainGlobal {
             };
         }
     }
+
+    fn clean_up(&mut self) {
+        let current_ptr = self.records.load(atomic::Ordering::SeqCst);
+        if current_ptr.is_null() {
+            return;
+        }
+
+        let mut current = unsafe { Box::from_raw(current_ptr) };
+        loop {
+            let next_ptr = current.next.load(atomic::Ordering::SeqCst);
+            if next_ptr.is_null() {
+                return;
+            }
+            current = unsafe { Box::from_raw(next_ptr) };
+        }
+    }
 }
 
 impl Drop for DomainGlobal {
     fn drop(&mut self) {
         println!("Dropped Global");
 
-        // TODO
+        self.clean_up();
     }
 }
 

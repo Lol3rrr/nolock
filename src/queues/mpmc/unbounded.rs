@@ -14,7 +14,9 @@ use std::{
     sync::{atomic, Arc},
 };
 
-use crate::queues::DequeueError;
+use crate::{hazard_ptr, queues::DequeueError};
+
+use self::queue::BoundedQueue;
 
 mod queue;
 
@@ -25,12 +27,14 @@ pub struct Receiver<T> {
     head: atomic::AtomicPtr<queue::BoundedQueue<T>>,
     rx_count: Arc<atomic::AtomicU64>,
     tx_count: Arc<atomic::AtomicU64>,
+    hazard_domain: Arc<hazard_ptr::Domain>,
 }
 /// The Sender Half of an unbounded LSCQ Queue
 pub struct Sender<T> {
     tail: atomic::AtomicPtr<queue::BoundedQueue<T>>,
     rx_count: Arc<atomic::AtomicU64>,
     tx_count: Arc<atomic::AtomicU64>,
+    hazard_domain: Arc<hazard_ptr::Domain>,
 }
 
 impl<T> Debug for Receiver<T> {
@@ -57,15 +61,19 @@ pub fn queue<T>() -> (Receiver<T>, Sender<T>) {
     let rx_count = Arc::new(atomic::AtomicU64::new(1));
     let tx_count = Arc::new(atomic::AtomicU64::new(1));
 
+    let hazard_domain = Arc::new(hazard_ptr::Domain::new());
+
     let rx = Receiver {
         head,
         rx_count: rx_count.clone(),
         tx_count: tx_count.clone(),
+        hazard_domain: hazard_domain.clone(),
     };
     let tx = Sender {
         tail,
         rx_count,
         tx_count,
+        hazard_domain,
     };
 
     (rx, tx)
@@ -79,8 +87,10 @@ impl<T> Sender<T> {
                 return Err(data);
             }
 
-            let tail_ptr = self.tail.load(atomic::Ordering::Acquire);
-            let tail = unsafe { &*tail_ptr };
+            let tail = self
+                .hazard_domain
+                .protect(&self.tail, atomic::Ordering::Acquire);
+            let tail_ptr = tail.raw() as *mut BoundedQueue<T>;
 
             let next_ptr = tail.next.load(atomic::Ordering::Acquire);
             if !next_ptr.is_null() {
@@ -150,8 +160,10 @@ impl<T> Receiver<T> {
                 return Err(DequeueError::Closed);
             }
 
-            let head_ptr = self.head.load(atomic::Ordering::Acquire);
-            let head = unsafe { &*head_ptr };
+            let head = self
+                .hazard_domain
+                .protect(&self.head, atomic::Ordering::Acquire);
+            let head_ptr = head.raw() as *mut BoundedQueue<T>;
 
             match head.dequeue() {
                 Ok(data) => return Ok(data),
@@ -183,8 +195,10 @@ impl<T> Receiver<T> {
                 )
                 .is_ok()
             {
-                // TODO
-                // Currently this is just leaking all the Memory and not reclaiming it
+                self.hazard_domain.retire(head_ptr, |ptr| {
+                    let boxed = unsafe { Box::from_raw(ptr) };
+                    drop(boxed);
+                });
             }
         }
     }
