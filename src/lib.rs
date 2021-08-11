@@ -17,3 +17,5 @@ pub mod hash_trie;
 pub mod hazard_ptr;
 #[cfg(feature = "queues")]
 pub mod queues;
+#[cfg(feature = "thread_data")]
+pub mod thread_data;
