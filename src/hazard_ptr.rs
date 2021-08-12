@@ -27,12 +27,24 @@ pub use guard::Guard;
 
 use crate::thread_data::ThreadData;
 
-use lazy_static::lazy_static;
+mod global {
+    use std::sync::Arc;
 
-lazy_static! {
-    /// The Global Shared Domain
-    pub static ref GLOBAL: Domain = Domain::new(64);
+    use lazy_static::lazy_static;
+
+    use super::Domain;
+
+    lazy_static! {
+        static ref GLOBAL: Arc<Domain> = Arc::new(Domain::new(64));
+    }
+
+    /// Returns an Arc for the Global Shared Hazard-Pointer Domain
+    pub fn get_global_domain() -> Arc<Domain> {
+        GLOBAL.clone()
+    }
 }
+
+pub use global::*;
 
 /// A Hazard-Pointer-Domain that can be used either globally as a shared Domain
 /// or as a per Object Domain to seperate the Domains of different Instances of
