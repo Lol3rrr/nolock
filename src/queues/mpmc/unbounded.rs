@@ -80,7 +80,19 @@ pub fn queue<T>() -> (Receiver<T>, Sender<T>) {
 }
 
 impl<T> Sender<T> {
-    /// TODO
+    /// Attempts to enqueue the given Data on the Queue, this will only fail
+    /// if the Queue has been closed by all the Receivers because then no one
+    /// would be able to Dequeue the Data again.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use nolock::queues::mpmc::unbounded;
+    /// let (rx, tx) = unbounded::queue::<usize>();
+    ///
+    /// assert_eq!(Ok(()), tx.enqueue(123));
+    ///
+    /// # drop(rx);
+    /// ```
     pub fn enqueue(&self, mut data: T) -> Result<(), T> {
         loop {
             let tail = self
@@ -154,7 +166,19 @@ impl<T> Drop for Sender<T> {
 }
 
 impl<T> Receiver<T> {
-    /// TODO
+    /// Attempts to Dequeue an Entry from the Queue
+    ///
+    /// # Example
+    /// ```rust
+    /// # use nolock::queues::mpmc::unbounded;
+    /// # use nolock::queues::DequeueError;
+    /// let (rx, tx) = unbounded::queue::<usize>();
+    ///
+    /// tx.enqueue(13).unwrap();
+    ///
+    /// assert_eq!(Ok(13), rx.try_dequeue());
+    /// assert_eq!(Err(DequeueError::Empty), rx.try_dequeue());
+    /// ```
     pub fn try_dequeue(&self) -> Result<T, DequeueError> {
         loop {
             if self.is_closed() {

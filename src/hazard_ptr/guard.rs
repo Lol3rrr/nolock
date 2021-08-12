@@ -34,12 +34,7 @@ impl<T> Drop for Guard<T> {
         // We can "savely" ignore this Result because even if we detect a
         // failure in this case, there is nothing we can really do about it...
         // I think?
-        match self.record_returner.enqueue(self.record) {
-            Ok(_) => {}
-            Err((ptr, e)) => {
-                println!("Returning Record: {:?}", e);
-            }
-        };
+        let _ = self.record_returner.enqueue(self.record);
     }
 }
 

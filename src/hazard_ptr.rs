@@ -27,6 +27,13 @@ pub use guard::Guard;
 
 use crate::thread_data::ThreadData;
 
+use lazy_static::lazy_static;
+
+lazy_static! {
+    /// The Global Shared Domain
+    pub static ref GLOBAL: Domain = Domain::new(64);
+}
+
 /// A Hazard-Pointer-Domain that can be used either globally as a shared Domain
 /// or as a per Object Domain to seperate the Domains of different Instances of
 /// Objects.

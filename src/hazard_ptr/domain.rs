@@ -37,15 +37,15 @@ impl Debug for TLDomain {
 
 impl Drop for TLDomain {
     fn drop(&mut self) {
-        println!("Dropped TL-Domain");
+        // This will attempt to retire/reclaim all the waiting entries for the
+        // local Thread. Although this is not garantued to free all the marked
+        // Nodes, because other Threads might still use the Data, in that case
+        // we will leak the memory at the moment
+        self.reclaim();
 
         // TODO
-        // This should (at least try to) reclaim all the current
-        // Elements in the R-List, as this would otherwise result
-        // in a memory leak
-        for r_entry in self.r_list.drain(..) {
-            r_entry.retire();
-        }
+        // Figure out what to do with the remaining Data that could not be
+        // retired in this instance
     }
 }
 
