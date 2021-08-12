@@ -155,6 +155,20 @@ impl<T> Sender<T> {
     }
 
     /// Checks if the Queue has been closed by the Receiver Side
+    ///
+    /// # Example
+    /// ```rust
+    /// # use nolock::queues::mpmc::unbounded;
+    /// let (rx, tx) = unbounded::queue::<usize>();
+    ///
+    /// // Queue is still open
+    /// assert_eq!(false, tx.is_closed());
+    ///
+    /// // Close from the Receiving Side by dropping the Receiver
+    /// drop(rx);
+    ///
+    /// assert_eq!(true, tx.is_closed());
+    /// ```
     pub fn is_closed(&self) -> bool {
         self.rx_count.load(atomic::Ordering::Acquire) == 0
     }
@@ -230,6 +244,24 @@ impl<T> Receiver<T> {
     }
 
     /// Checks if the Queue has been closed by the Sender Side
+    ///
+    /// # Note
+    /// Even if the Queue is closed, there may still be Elements to dequeue.
+    /// A Closed-Queue simply indicates that no more new Elements will be added
+    /// but does not make any garantues about the current Content of the Queue
+    ///
+    /// # Example
+    /// ```rust
+    /// # use nolock::queues::mpmc::unbounded;
+    /// let (rx, tx) = unbounded::queue::<usize>();
+    ///
+    /// assert_eq!(false, rx.is_closed());
+    ///
+    /// // Close the Queue by droping the Sender
+    /// drop(tx);
+    ///
+    /// assert_eq!(true, rx.is_closed());
+    /// ```
     pub fn is_closed(&self) -> bool {
         self.tx_count.load(atomic::Ordering::Acquire) == 0
     }
