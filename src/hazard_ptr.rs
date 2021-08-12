@@ -126,8 +126,10 @@ impl Domain {
     /// // Access the inner Value
     /// assert_eq!(13, *guarded);
     ///
-    /// // Retire/"Free" the Data
-    /// domain.retire(ptr, |p| { unsafe { Box::from_raw(p) }; });
+    /// unsafe {
+    ///     // Retire/"Free" the Data
+    ///     domain.retire(ptr, |p| { unsafe { Box::from_raw(p) }; });
+    /// }
     ///
     /// // As long as we still have the Guard, the Data will not actually be
     /// // reclaimed and can still be used safely
@@ -163,7 +165,18 @@ impl Domain {
     /// Data may be stored somewhere or the Thread that was responsible for it
     /// crashed/wont respond/is not running again and therefore can not mark it
     /// as unused anymore.
-    pub fn retire<T, F>(&self, ptr: *mut T, retire_fn: F)
+    ///
+    /// # Safety
+    /// The given Pointer must not be reachable anymore, meaning that it can
+    /// not be loaded anymore or any new Guards pointing to it can be created.
+    /// However it is okay to have outstanding Guards pointing to it that may
+    /// still be used and those are still valid.
+    ///
+    /// This garantue is already held up by most algorithms as they first swap
+    /// out the Pointer from any shared references and then perform a call to
+    /// retire, which is valid in this case as the pointer can not be loaded
+    /// anymore from the shared reference.
+    pub unsafe fn retire<T, F>(&self, ptr: *mut T, retire_fn: F)
     where
         F: Fn(*mut T) + 'static,
     {
@@ -229,10 +242,12 @@ mod tests {
 
         assert_eq!(0, guard.drop_count());
 
-        domain.retire(raw_ptr, |ptr| {
-            let boxed: Box<DropCheck> = unsafe { Box::from_raw(ptr) };
-            drop(boxed);
-        });
+        unsafe {
+            domain.retire(raw_ptr, |ptr| {
+                let boxed: Box<DropCheck> = Box::from_raw(ptr);
+                drop(boxed);
+            });
+        }
 
         domain.reclaim();
 
@@ -244,10 +259,12 @@ mod tests {
         let other_raw_ptr = Box::into_raw(Box::new(second_drop_chk.clone()));
         shared_ptr.store(other_raw_ptr, atomic::Ordering::SeqCst);
 
-        domain.retire(other_raw_ptr, |ptr| {
-            let boxed = unsafe { Box::from_raw(ptr) };
-            drop(boxed);
-        });
+        unsafe {
+            domain.retire(other_raw_ptr, |ptr| {
+                let boxed = Box::from_raw(ptr);
+                drop(boxed);
+            });
+        }
 
         domain.reclaim();
 

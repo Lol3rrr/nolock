@@ -229,10 +229,16 @@ impl<T> Receiver<T> {
                 )
                 .is_ok()
             {
-                self.hazard_domain.retire(head_ptr, |ptr| {
-                    let boxed = unsafe { Box::from_raw(ptr) };
-                    drop(boxed);
-                });
+                // Safety:
+                // This is safe to do, because the Pointer is no longer
+                // accessible from a shared Reference/Pointer since we just
+                // performed a successful compare_exchange on it.
+                unsafe {
+                    self.hazard_domain.retire(head_ptr, |ptr| {
+                        let boxed = Box::from_raw(ptr);
+                        drop(boxed);
+                    })
+                };
             }
         }
     }
@@ -270,10 +276,17 @@ impl<T> Drop for Receiver<T> {
         loop {
             let next_ptr = current.next.load(atomic::Ordering::SeqCst);
 
-            self.hazard_domain.retire(current_ptr, |ptr| {
-                let boxed = unsafe { Box::from_raw(ptr) };
-                drop(boxed);
-            });
+            // Safety:
+            // This is safe to do, because we are the only Thread with access
+            // to the Queue anymore or at least the Head of the Queue meaning
+            // that no other Thread could load the Pointers anymore and
+            // therefore we can savely retire the entire List
+            unsafe {
+                self.hazard_domain.retire(current_ptr, |ptr| {
+                    let boxed = Box::from_raw(ptr);
+                    drop(boxed);
+                })
+            };
 
             if next_ptr.is_null() {
                 break;
