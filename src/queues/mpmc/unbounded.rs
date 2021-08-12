@@ -39,13 +39,11 @@ pub struct Sender<T> {
 
 impl<T> Debug for Receiver<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // TODO
         write!(f, "LSCQ-Receiver<{}>", std::any::type_name::<T>())
     }
 }
 impl<T> Debug for Sender<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // TODO
         write!(f, "LSCQ-Sender<{}>", std::any::type_name::<T>())
     }
 }

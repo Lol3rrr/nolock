@@ -53,10 +53,18 @@ pub fn new_queue<T>(capacity: usize) -> BoundedQueue<T> {
 }
 
 // Safety:
-// TODO
-unsafe impl<T> Sync for BoundedQueue<T> where T: Sync {}
+// This is safe to do because the Queue itself is sync and upholds the variant
+// for giving "synchronized" access to the underlying Data by the nature of the
+// algorithm.
+// Whether or not T is Sync is actually not important because we never actually
+// use T anywhere in the Code but instead just pass it around
+unsafe impl<T> Sync for BoundedQueue<T> {}
+
 // Safety:
-// TODO
+// The Queue is only Send if T is send, because even though we dont use T in
+// the Algorithm, we still store it. Therefore if you can't send T across
+// threads you can't send the Queue across Threads, because we also store them
+// and would therefore try to send them across Threads.
 unsafe impl<T> Send for BoundedQueue<T> where T: Send {}
 
 impl<T> BoundedQueue<T> {

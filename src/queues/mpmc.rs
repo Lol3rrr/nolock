@@ -5,8 +5,5 @@
 
 mod queue;
 
-// TODO
-// * Add the Unbounded version
-
 pub mod bounded;
 pub mod unbounded;

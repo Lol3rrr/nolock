@@ -48,13 +48,11 @@ pub mod ncq {
 
     impl<T> Debug for Receiver<T> {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            // TODO
             write!(f, "NCQ-Receiver<{}>()", std::any::type_name::<T>())
         }
     }
     impl<T> Debug for Sender<T> {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            // TODO
             write!(f, "NCQ-Sender<{}>()", std::any::type_name::<T>())
         }
     }
@@ -198,13 +196,11 @@ pub mod scq {
 
     impl<T> Debug for Receiver<T> {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            // TODO
             write!(f, "SCQ-Receiver<{}>()", std::any::type_name::<T>())
         }
     }
     impl<T> Debug for Sender<T> {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            // TODO
             write!(f, "SCQ-Sender<{}>()", std::any::type_name::<T>())
         }
     }
