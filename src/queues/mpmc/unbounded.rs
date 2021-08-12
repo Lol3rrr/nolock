@@ -204,10 +204,9 @@ impl<T> Receiver<T> {
                 .protect(&self.head, atomic::Ordering::Acquire);
             let head_ptr = head.raw() as *mut BoundedQueue<T>;
 
-            match head.dequeue() {
-                Ok(data) => return Ok(data),
-                Err(_) => {}
-            };
+            if let Ok(data) = head.dequeue() {
+                return Ok(data);
+            }
 
             let next_ptr = head.next.load(atomic::Ordering::Acquire);
             if next_ptr.is_null() {
@@ -219,10 +218,9 @@ impl<T> Receiver<T> {
                 .threshold
                 .store(thres_chk, atomic::Ordering::Release);
 
-            match head.dequeue() {
-                Ok(data) => return Ok(data),
-                Err(_) => {}
-            };
+            if let Ok(data) = head.dequeue() {
+                return Ok(data);
+            }
 
             if self
                 .head

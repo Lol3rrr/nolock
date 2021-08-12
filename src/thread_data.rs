@@ -3,6 +3,8 @@
 //! lock-free and is therefore useable in other lock-free Datastructures.
 
 mod id;
+use std::fmt::Debug;
+
 use id::Id;
 
 mod storage;
@@ -10,6 +12,12 @@ mod storage;
 /// A Storage-Container for Thread Local Data
 pub struct ThreadData<T> {
     storage: storage::Storage<T>,
+}
+
+impl<T> Debug for ThreadData<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Thread-Data<{}> ()", std::any::type_name::<T>())
+    }
 }
 
 impl<T> ThreadData<T> {
@@ -41,6 +49,12 @@ impl<T> ThreadData<T> {
                 self.storage.insert(id, data)
             }
         }
+    }
+}
+
+impl<T> Default for ThreadData<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
