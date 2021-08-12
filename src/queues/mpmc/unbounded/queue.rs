@@ -59,12 +59,6 @@ unsafe impl<T> Sync for BoundedQueue<T> where T: Sync {}
 // TODO
 unsafe impl<T> Send for BoundedQueue<T> where T: Send {}
 
-impl<T> Drop for BoundedQueue<T> {
-    fn drop(&mut self) {
-        println!("Dropped BoundedQueue");
-    }
-}
-
 impl<T> BoundedQueue<T> {
     /// Attempts to enqueue an item on the Queue
     ///

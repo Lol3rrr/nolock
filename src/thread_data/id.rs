@@ -15,6 +15,10 @@ impl std::hash::Hasher for IDHasher {
 
         println!("Bytes: {:?}", bytes);
     }
+    fn write_u64(&mut self, i: u64) {
+        self.result = i;
+    }
+
     fn finish(&self) -> u64 {
         self.result
     }

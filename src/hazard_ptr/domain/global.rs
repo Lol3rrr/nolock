@@ -25,7 +25,7 @@ impl DomainGlobal {
 
     /// Checks all the current Hazard-Pointers and returns a Set of all
     /// currently protected PTRs stored in them
-    pub(crate) fn get_protections(&self) -> HashSet<*const ()> {
+    pub fn get_protections(&self) -> HashSet<*const ()> {
         let mut plist = HashSet::new();
 
         let ptr = self.records.load(atomic::Ordering::SeqCst);
@@ -53,7 +53,7 @@ impl DomainGlobal {
     }
 
     /// This is used to add a new Record to the End of the Hazard-Pointer-List
-    pub(crate) fn append_record(&self, n_record_ptr: *mut Record<()>) {
+    pub fn append_record(&self, n_record_ptr: *mut Record<()>) {
         let ptr = self.records.load(atomic::Ordering::SeqCst);
         if ptr.is_null()
             && self
@@ -118,8 +118,6 @@ impl DomainGlobal {
 
 impl Drop for DomainGlobal {
     fn drop(&mut self) {
-        println!("Dropped Global");
-
         self.clean_up();
     }
 }

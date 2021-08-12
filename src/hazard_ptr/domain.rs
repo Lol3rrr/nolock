@@ -100,10 +100,16 @@ impl TLDomain {
         let tmplist = std::mem::take(&mut self.r_list);
 
         for node in tmplist {
-            if plist.contains(&(node.ptr as *const ())) {
+            if plist.contains(&node.const_ptr()) {
                 self.r_list.push(node);
             } else {
-                node.retire();
+                // # Safety
+                // This is safe because we have read all the current Hazard-
+                // Pointers and no one is protecting this Ptr, meaning that
+                // the Data is not accessed by another Thread at the same
+                // time and will also not be accessed in the Future and is
+                // therefore save to retire.
+                unsafe { node.retire() };
             }
         }
     }
@@ -129,11 +135,7 @@ impl TLDomain {
             _ => self.generate_new_record(),
         };
 
-        Guard {
-            inner: std::ptr::null_mut(),
-            record: record_ptr,
-            record_returner: self.record_sender.clone(),
-        }
+        Guard::new(std::ptr::null_mut(), record_ptr, self.record_sender.clone())
     }
 
     /// Loads the most recent Ptr-Value from the given AtomicPtr, protects it
@@ -144,16 +146,7 @@ impl TLDomain {
         atom_ptr: &atomic::AtomicPtr<T>,
         load_order: atomic::Ordering,
     ) -> Guard<T> {
-        let record_ptr = match self.record_receiver.try_dequeue() {
-            Ok(r) => r,
-            _ => self.generate_new_record(),
-        };
-
-        let mut guard: Guard<T> = Guard {
-            inner: std::ptr::null_mut(),
-            record: record_ptr,
-            record_returner: self.record_sender.clone(),
-        };
+        let mut guard: Guard<T> = self.empty_guard();
 
         guard.protect(atom_ptr, load_order);
 

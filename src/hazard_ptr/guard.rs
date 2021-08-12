@@ -11,12 +11,12 @@ use super::record::Record;
 /// it, as long as the Guard is not dropped
 pub struct Guard<T> {
     /// The actual Data-Ptr protected by the Hazard-Ptr
-    pub(crate) inner: *mut T,
+    inner: *mut T,
     /// A Ptr to the actual Hazard-Record that protects the underlying Data
-    pub(crate) record: *mut Record<()>,
+    record: *mut Record<()>,
     /// The Queue-Sender on which to return the Hazard-Record once the Guard
     /// is dropped to have a simpler schema for reusing Hazard-Pointers locally
-    pub(crate) record_returner: Arc<jiffy::Sender<*mut Record<()>>>,
+    record_returner: Arc<jiffy::Sender<*mut Record<()>>>,
 }
 
 impl<T> Debug for Guard<T> {
@@ -53,6 +53,18 @@ impl<T> Deref for Guard<T> {
 }
 
 impl<T> Guard<T> {
+    pub(crate) fn new(
+        ptr: *mut T,
+        record: *mut Record<()>,
+        returner: Arc<jiffy::Sender<*mut Record<()>>>,
+    ) -> Self {
+        Self {
+            inner: ptr,
+            record,
+            record_returner: returner,
+        }
+    }
+
     /// Gets the underlying PTR to the Data protected by the Guard
     pub fn raw(&self) -> *const T {
         self.inner as *const T

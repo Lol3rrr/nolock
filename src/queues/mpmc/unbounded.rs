@@ -142,7 +142,6 @@ impl<T> Sender<T> {
                         atomic::Ordering::AcqRel,
                         atomic::Ordering::Relaxed,
                     );
-                    println!("New-Queue");
                     return Ok(());
                 }
                 Err(_) => {
@@ -233,7 +232,6 @@ impl<T> Receiver<T> {
                 .is_ok()
             {
                 self.hazard_domain.retire(head_ptr, |ptr| {
-                    println!("[Queue] Free-Queue");
                     let boxed = unsafe { Box::from_raw(ptr) };
                     drop(boxed);
                 });
@@ -275,7 +273,6 @@ impl<T> Drop for Receiver<T> {
             let next_ptr = current.next.load(atomic::Ordering::SeqCst);
 
             self.hazard_domain.retire(current_ptr, |ptr| {
-                println!("[Drop] Free-Queue");
                 let boxed = unsafe { Box::from_raw(ptr) };
                 drop(boxed);
             });
