@@ -27,7 +27,7 @@ impl<T> Entry<T> {
             return Some(&self.data);
         }
 
-        match self.next.load(atomic::Ordering::SeqCst) {
+        match self.next.load(atomic::Ordering::Acquire) {
             PtrTarget::Entry(entry_ptr) => {
                 let entry = unsafe { &*entry_ptr };
                 entry.get_chain(key, current_level)
@@ -49,7 +49,7 @@ impl<T> Entry<T> {
             panic!("The Same key should never be inserted twice");
         }
 
-        if let PtrTarget::Level(sub_lvl_ptr) = self.next.load(atomic::Ordering::SeqCst) {
+        if let PtrTarget::Level(sub_lvl_ptr) = self.next.load(atomic::Ordering::Acquire) {
             let sub_lvl = unsafe { &*sub_lvl_ptr };
 
             if sub_lvl.level() == level.level() {
@@ -63,8 +63,8 @@ impl<T> Entry<T> {
                     match self.next.compare_exchange(
                         &expected,
                         &PtrTarget::Level(n_level_ptr),
-                        atomic::Ordering::SeqCst,
-                        atomic::Ordering::SeqCst,
+                        atomic::Ordering::AcqRel,
+                        atomic::Ordering::Relaxed,
                     ) {
                         Ok(_) => {
                             level.move_buckets_to_new_level(key, n_level_ptr);
@@ -81,8 +81,8 @@ impl<T> Entry<T> {
                     match self.next.compare_exchange(
                         &expected,
                         &PtrTarget::Entry(n_entry_ptr),
-                        atomic::Ordering::SeqCst,
-                        atomic::Ordering::SeqCst,
+                        atomic::Ordering::AcqRel,
+                        atomic::Ordering::Relaxed,
                     ) {
                         Ok(_) => return,
                         Err(_) => {
@@ -94,7 +94,7 @@ impl<T> Entry<T> {
             }
         }
 
-        match self.next.load(atomic::Ordering::SeqCst) {
+        match self.next.load(atomic::Ordering::Acquire) {
             PtrTarget::Entry(entry_ptr) => {
                 let entry = unsafe { &*entry_ptr };
                 entry.insert_chain(key, data, level, pos + 1);
@@ -111,7 +111,7 @@ impl<T> Entry<T> {
     }
 
     pub fn drop_entry(self: Box<Self>, level_ptr: *mut Level<T>) {
-        match self.next.load(atomic::Ordering::SeqCst) {
+        match self.next.load(atomic::Ordering::Acquire) {
             PtrTarget::Level(sub_lvl_ptr) => {
                 if sub_lvl_ptr == level_ptr {
                     return;

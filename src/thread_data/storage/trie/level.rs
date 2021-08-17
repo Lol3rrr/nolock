@@ -54,7 +54,7 @@ impl<T> Level<T> {
     }
 
     fn adjust_node_on_chain(&self, node: &Entry<T>, chain: &Entry<T>, chain_pos: usize) {
-        if let PtrTarget::Level(sub_lvl_ptr) = chain.next.load(atomic::Ordering::SeqCst) {
+        if let PtrTarget::Level(sub_lvl_ptr) = chain.next.load(atomic::Ordering::Acquire) {
             if chain_pos == self.max_chain() {
                 let new_level = Level::new(self.level + 1, self.key_size, self.get_own_ptr());
                 let new_level_ptr = Box::into_raw(new_level);
@@ -62,8 +62,8 @@ impl<T> Level<T> {
                 match chain.next.compare_exchange(
                     &PtrTarget::Level(sub_lvl_ptr),
                     &PtrTarget::Level(new_level_ptr),
-                    atomic::Ordering::SeqCst,
-                    atomic::Ordering::SeqCst,
+                    atomic::Ordering::AcqRel,
+                    atomic::Ordering::Relaxed,
                 ) {
                     Ok(_) => {
                         let new_level = unsafe { &*new_level_ptr };
@@ -71,7 +71,7 @@ impl<T> Level<T> {
                         let bucket_index = Self::index(node.key(), self.level, self.key_size);
                         let bucket = self.entries.get(bucket_index).expect("");
 
-                        match bucket.load(atomic::Ordering::SeqCst) {
+                        match bucket.load(atomic::Ordering::Acquire) {
                             PtrTarget::Entry(bucket_entry_ptr) => {
                                 let bucket_entry = unsafe { &*bucket_entry_ptr };
                                 new_level.adjust_chain_nodes(bucket_entry);
@@ -79,7 +79,7 @@ impl<T> Level<T> {
                             _ => unreachable!(),
                         };
 
-                        bucket.store(&PtrTarget::Level(new_level_ptr), atomic::Ordering::SeqCst);
+                        bucket.store(&PtrTarget::Level(new_level_ptr), atomic::Ordering::Release);
 
                         return;
                     }
@@ -91,8 +91,8 @@ impl<T> Level<T> {
                 match chain.next.compare_exchange(
                     &PtrTarget::Level(sub_lvl_ptr),
                     &PtrTarget::Entry(node_ptr),
-                    atomic::Ordering::SeqCst,
-                    atomic::Ordering::SeqCst,
+                    atomic::Ordering::AcqRel,
+                    atomic::Ordering::Relaxed,
                 ) {
                     Ok(_) => return,
                     Err(_) => {}
@@ -100,7 +100,7 @@ impl<T> Level<T> {
             }
         }
 
-        match chain.next.load(atomic::Ordering::SeqCst) {
+        match chain.next.load(atomic::Ordering::Acquire) {
             PtrTarget::Entry(next_entry_ptr) => {
                 let next_entry = unsafe { &*next_entry_ptr };
                 self.adjust_node_on_chain(node, next_entry, chain_pos + 1);
@@ -120,13 +120,13 @@ impl<T> Level<T> {
     fn adjust_node_on_level(&self, node: &Entry<T>) {
         node.next.store(
             &PtrTarget::Level(self.get_own_ptr()),
-            atomic::Ordering::SeqCst,
+            atomic::Ordering::Release,
         );
 
         let bucket_index = Self::index(node.key(), self.level, self.key_size);
         let bucket = self.entries.get(bucket_index).expect("");
 
-        if let PtrTarget::Level(sub_lvl_ptr) = bucket.load(atomic::Ordering::SeqCst) {
+        if let PtrTarget::Level(sub_lvl_ptr) = bucket.load(atomic::Ordering::Acquire) {
             let sub_lvl = unsafe { &*sub_lvl_ptr };
 
             if sub_lvl.level() == self.level() {
@@ -135,8 +135,8 @@ impl<T> Level<T> {
                 match bucket.compare_exchange(
                     &PtrTarget::Level(self.get_own_ptr()),
                     &PtrTarget::Entry(node_ptr),
-                    atomic::Ordering::SeqCst,
-                    atomic::Ordering::SeqCst,
+                    atomic::Ordering::AcqRel,
+                    atomic::Ordering::Relaxed,
                 ) {
                     Ok(_) => return,
                     Err(_) => {}
@@ -144,7 +144,7 @@ impl<T> Level<T> {
             }
         }
 
-        match bucket.load(atomic::Ordering::SeqCst) {
+        match bucket.load(atomic::Ordering::Acquire) {
             PtrTarget::Entry(entry_ptr) => {
                 let chain_entry = unsafe { &*entry_ptr };
                 self.adjust_node_on_chain(node, chain_entry, 1);
@@ -157,7 +157,7 @@ impl<T> Level<T> {
     }
 
     fn adjust_chain_nodes(&self, node: &Entry<T>) {
-        if let PtrTarget::Entry(entry_ptr) = node.next.load(atomic::Ordering::SeqCst) {
+        if let PtrTarget::Entry(entry_ptr) = node.next.load(atomic::Ordering::Acquire) {
             let entry = unsafe { &*entry_ptr };
             self.adjust_chain_nodes(entry);
         }
@@ -168,7 +168,7 @@ impl<T> Level<T> {
         let bucket_index = Self::index(key, self.level, self.key_size);
         let bucket = self.entries.get(bucket_index).expect("");
 
-        let initial_entry = match bucket.load(atomic::Ordering::SeqCst) {
+        let initial_entry = match bucket.load(atomic::Ordering::Acquire) {
             PtrTarget::Entry(entry_ptr) => unsafe { &*entry_ptr },
             _ => unreachable!(),
         };
@@ -176,14 +176,14 @@ impl<T> Level<T> {
         let n_level = unsafe { &*n_level_ptr };
         n_level.adjust_chain_nodes(initial_entry);
 
-        bucket.store(&PtrTarget::Level(n_level_ptr), atomic::Ordering::SeqCst);
+        bucket.store(&PtrTarget::Level(n_level_ptr), atomic::Ordering::Release);
     }
 
     pub fn insert_level(&self, key: u64, mut data: T) {
         let bucket_index = Self::index(key, self.level, self.key_size);
         let bucket = self.entries.get(bucket_index).expect("");
 
-        if let PtrTarget::Level(sub_lvl_ptr) = bucket.load(atomic::Ordering::SeqCst) {
+        if let PtrTarget::Level(sub_lvl_ptr) = bucket.load(atomic::Ordering::Acquire) {
             let sub_lvl = unsafe { &*sub_lvl_ptr };
 
             if sub_lvl.level == self.level {
@@ -196,8 +196,8 @@ impl<T> Level<T> {
                 match bucket.compare_exchange(
                     &PtrTarget::Level(sub_lvl_ptr),
                     &PtrTarget::Entry(new_entry_ptr),
-                    atomic::Ordering::SeqCst,
-                    atomic::Ordering::SeqCst,
+                    atomic::Ordering::AcqRel,
+                    atomic::Ordering::Relaxed,
                 ) {
                     Ok(_) => return,
                     Err(_) => {
@@ -208,7 +208,7 @@ impl<T> Level<T> {
             }
         }
 
-        match bucket.load(atomic::Ordering::SeqCst) {
+        match bucket.load(atomic::Ordering::Acquire) {
             PtrTarget::Level(sub_lvl_ptr) => {
                 let sub_lvl = unsafe { &*sub_lvl_ptr };
                 sub_lvl.insert_level(key, data);
