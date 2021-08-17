@@ -93,7 +93,7 @@ impl Domain {
     pub fn new(reclaim_threshold: usize) -> Self {
         Self {
             global: Arc::new(DomainGlobal::new()),
-            local: Arc::new(ThreadData::new()),
+            local: Arc::new(ThreadData::default()),
             reclaim_threshold,
         }
     }

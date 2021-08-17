@@ -4,6 +4,7 @@ mod hash_trie;
 mod mpmc;
 mod mpsc;
 mod spsc;
+mod thread_data;
 
 criterion_group!(
     maps,
@@ -23,4 +24,12 @@ criterion_group!(
     mpmc::scq_enqueue_dequeue,
 );
 
-criterion_main!(queues, maps);
+criterion_group!(
+    thread_data_storage,
+    thread_data::storage::list::inserts,
+    thread_data::storage::list::gets,
+    thread_data::storage::trie::inserts,
+    thread_data::storage::trie::gets,
+);
+
+criterion_main!(queues, maps, thread_data_storage);

@@ -7,24 +7,53 @@ use std::fmt::Debug;
 
 use id::Id;
 
-mod storage;
+pub mod storage;
 
-/// A Storage-Container for Thread Local Data
-pub struct ThreadData<T> {
-    storage: storage::Storage<T>,
+/// TODO
+pub trait StorageBackend<T> {
+    /// TODO
+    fn get(&self, id: u64) -> Option<&T>;
+    /// TODO
+    fn insert(&self, id: u64, data: T) -> &T;
 }
 
-impl<T> Debug for ThreadData<T> {
+/// A Storage-Container for Thread Local Data
+pub struct ThreadDataStorage<S, T> {
+    storage: S,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<S, T> Debug for ThreadDataStorage<S, T>
+where
+    S: StorageBackend<T>,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Thread-Data<{}> ()", std::any::type_name::<T>())
     }
 }
 
-impl<T> ThreadData<T> {
-    /// Creates a new Storage-Container
+impl<T> ThreadDataStorage<storage::Trie<T>, T> {
+    /// TODO
     pub fn new() -> Self {
+        Self::new_storage(storage::Trie::new())
+    }
+}
+impl<T> ThreadDataStorage<storage::List<T>, T> {
+    /// TODO
+    pub fn new() -> Self {
+        Self::new_storage(storage::List::new())
+    }
+}
+
+impl<S, T> ThreadDataStorage<S, T>
+where
+    S: StorageBackend<T>,
+{
+    /// TODO
+    pub fn new_storage(storage: S) -> Self {
         Self {
-            storage: storage::Storage::new(),
+            storage,
+            _marker: std::marker::PhantomData::default(),
         }
     }
 
@@ -52,11 +81,22 @@ impl<T> ThreadData<T> {
     }
 }
 
-impl<T> Default for ThreadData<T> {
+impl<T> Default for ThreadDataStorage<storage::Trie<T>, T> {
     fn default() -> Self {
         Self::new()
     }
 }
+impl<T> Default for ThreadDataStorage<storage::List<T>, T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+unsafe impl<S, T> Sync for ThreadDataStorage<S, T> {}
+unsafe impl<S, T> Send for ThreadDataStorage<S, T> {}
+
+/// TODO
+pub type ThreadData<T> = ThreadDataStorage<storage::Trie<T>, T>;
 
 #[cfg(test)]
 mod tests {
