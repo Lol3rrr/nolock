@@ -134,11 +134,19 @@ pub fn async_queue<T>() -> (AsyncUnboundedReceiver<T>, AsyncUnboundedSender<T>) 
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn enqueue_dequeue() {
-        let (mut rx, mut tx) = async_queue();
+    #[test]
+    fn enqueue_dequeue() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
 
-        tx.enqueue(13).unwrap();
-        assert_eq!(Ok(13), rx.dequeue().await);
+        async fn test_fn() {
+            let (mut rx, mut tx) = async_queue();
+
+            tx.enqueue(13).unwrap();
+            assert_eq!(Ok(13), rx.dequeue().await);
+        }
+
+        runtime.block_on(test_fn());
     }
 }
