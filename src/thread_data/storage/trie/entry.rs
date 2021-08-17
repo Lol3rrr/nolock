@@ -17,6 +17,9 @@ impl<T> Entry<T> {
     pub fn key(&self) -> u64 {
         self.key
     }
+    pub fn data(&self) -> &T {
+        &self.data
+    }
 
     pub fn into_data(self) -> T {
         self.data
@@ -44,8 +47,8 @@ impl<T> Entry<T> {
         }
     }
 
-    pub fn insert_chain(&self, key: u64, mut data: T, level: &Level<T>, pos: usize) {
-        if self.key == key {
+    pub fn insert_chain(&self, mut new_entry: Box<Self>, level: &Level<T>, pos: usize) -> &T {
+        if self.key == new_entry.key {
             panic!("The Same key should never be inserted twice");
         }
 
@@ -67,16 +70,16 @@ impl<T> Entry<T> {
                         atomic::Ordering::Relaxed,
                     ) {
                         Ok(_) => {
-                            level.move_buckets_to_new_level(key, n_level_ptr);
+                            level.move_buckets_to_new_level(new_entry.key, n_level_ptr);
                         }
                         Err(_) => {}
                     };
                 } else {
-                    let n_entry_ptr = Box::into_raw(Box::new(Self::new(
-                        key,
-                        data,
-                        CustomPtr::new_level(level.get_own_ptr()),
-                    )));
+                    new_entry.next.store(
+                        &PtrTarget::Level(level.get_own_ptr()),
+                        atomic::Ordering::Release,
+                    );
+                    let n_entry_ptr = Box::into_raw(new_entry);
 
                     match self.next.compare_exchange(
                         &expected,
@@ -84,10 +87,12 @@ impl<T> Entry<T> {
                         atomic::Ordering::AcqRel,
                         atomic::Ordering::Relaxed,
                     ) {
-                        Ok(_) => return,
+                        Ok(_) => {
+                            let entry = unsafe { &*n_entry_ptr };
+                            return entry.data();
+                        }
                         Err(_) => {
-                            let boxed = unsafe { Box::from_raw(n_entry_ptr) };
-                            data = boxed.into_data();
+                            new_entry = unsafe { Box::from_raw(n_entry_ptr) };
                         }
                     };
                 }
@@ -97,7 +102,7 @@ impl<T> Entry<T> {
         match self.next.load(atomic::Ordering::Acquire) {
             PtrTarget::Entry(entry_ptr) => {
                 let entry = unsafe { &*entry_ptr };
-                entry.insert_chain(key, data, level, pos + 1);
+                entry.insert_chain(new_entry, level, pos + 1)
             }
             PtrTarget::Level(sub_lvl_ptr) => {
                 let mut sub_lvl = unsafe { &*sub_lvl_ptr };
@@ -105,9 +110,9 @@ impl<T> Entry<T> {
                     sub_lvl = unsafe { &*sub_lvl.previous() };
                 }
 
-                sub_lvl.insert_level(key, data);
+                sub_lvl.insert_level(new_entry)
             }
-        };
+        }
     }
 
     pub fn drop_entry(self: Box<Self>, level_ptr: *mut Level<T>) {

@@ -179,19 +179,19 @@ impl<T> Level<T> {
         bucket.store(&PtrTarget::Level(n_level_ptr), atomic::Ordering::Release);
     }
 
-    pub fn insert_level(&self, key: u64, mut data: T) {
-        let bucket_index = Self::index(key, self.level, self.key_size);
+    pub fn insert_level(&self, mut new_entry: Box<Entry<T>>) -> &T {
+        let bucket_index = Self::index(new_entry.key(), self.level, self.key_size);
         let bucket = self.entries.get(bucket_index).expect("");
 
         if let PtrTarget::Level(sub_lvl_ptr) = bucket.load(atomic::Ordering::Acquire) {
             let sub_lvl = unsafe { &*sub_lvl_ptr };
 
             if sub_lvl.level == self.level {
-                let new_entry_ptr = Box::into_raw(Box::new(Entry::new(
-                    key,
-                    data,
-                    CustomPtr::new_level(self.get_own_ptr()),
-                )));
+                new_entry.next.store(
+                    &PtrTarget::Level(self.get_own_ptr()),
+                    atomic::Ordering::Release,
+                );
+                let new_entry_ptr = Box::into_raw(new_entry);
 
                 match bucket.compare_exchange(
                     &PtrTarget::Level(sub_lvl_ptr),
@@ -199,10 +199,12 @@ impl<T> Level<T> {
                     atomic::Ordering::AcqRel,
                     atomic::Ordering::Relaxed,
                 ) {
-                    Ok(_) => return,
+                    Ok(_) => {
+                        let entry = unsafe { &*new_entry_ptr };
+                        return entry.data();
+                    }
                     Err(_) => {
-                        let boxed = unsafe { Box::from_raw(new_entry_ptr) };
-                        data = boxed.into_data();
+                        new_entry = unsafe { Box::from_raw(new_entry_ptr) };
                     }
                 };
             }
@@ -211,19 +213,22 @@ impl<T> Level<T> {
         match bucket.load(atomic::Ordering::Acquire) {
             PtrTarget::Level(sub_lvl_ptr) => {
                 let sub_lvl = unsafe { &*sub_lvl_ptr };
-                sub_lvl.insert_level(key, data);
+                sub_lvl.insert_level(new_entry)
             }
             PtrTarget::Entry(entry_ptr) => {
                 let entry = unsafe { &*entry_ptr };
-                entry.insert_chain(key, data, self, 1);
+                entry.insert_chain(new_entry, self, 1)
             }
-        };
+        }
     }
 
     pub fn insert(&self, key: u64, data: T) -> &T {
-        self.insert_level(key, data);
-
-        self.get(key).expect("We just inserted the Value")
+        let entry = Box::new(Entry::new(
+            key,
+            data,
+            CustomPtr::new_level(self.get_own_ptr()),
+        ));
+        self.insert_level(entry)
     }
 
     pub fn get(&self, key: u64) -> Option<&T> {
