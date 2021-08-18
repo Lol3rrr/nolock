@@ -33,16 +33,18 @@ pub mod storage {
 
             group.throughput(Throughput::Elements(1));
 
-            group.bench_function("64-entries", |b| {
-                let list = nolock::thread_data::storage::List::<usize>::new();
-                for id in 0..64 {
-                    list.insert(id, 123usize);
-                }
+            for size in [1, 4, 8, 16, 32, 64] {
+                group.bench_function(format!("{:03}-entries", size), |b| {
+                    let list = nolock::thread_data::storage::List::<usize>::new();
+                    for id in 0..size {
+                        list.insert(id, 123usize);
+                    }
 
-                b.iter(|| {
-                    assert_eq!(Some(&123), list.get(63));
+                    b.iter(|| {
+                        assert_eq!(Some(&123), list.get(size - 1));
+                    });
                 });
-            });
+            }
         }
     }
     pub mod trie {
@@ -79,16 +81,18 @@ pub mod storage {
 
             group.throughput(Throughput::Elements(1));
 
-            group.bench_function("64-entries", |b| {
-                let list = nolock::thread_data::storage::Trie::<usize>::new();
-                for id in 0..64 {
-                    list.insert(id, 123usize);
-                }
+            for size in [1, 4, 8, 16, 32, 64] {
+                group.bench_function(format!("{:03}-entries", size), |b| {
+                    let list = nolock::thread_data::storage::Trie::<usize>::new();
+                    for id in 0..size {
+                        list.insert(id, 123usize);
+                    }
 
-                b.iter(|| {
-                    assert_eq!(Some(&123), list.get(63));
+                    b.iter(|| {
+                        assert_eq!(Some(&123), list.get(size - 1));
+                    });
                 });
-            });
+            }
         }
     }
 }

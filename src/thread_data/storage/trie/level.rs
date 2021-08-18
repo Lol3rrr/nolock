@@ -60,8 +60,8 @@ impl<T> Level<T> {
                 let new_level_ptr = Box::into_raw(new_level);
 
                 match chain.next.compare_exchange(
-                    &PtrTarget::Level(sub_lvl_ptr),
-                    &PtrTarget::Level(new_level_ptr),
+                    PtrTarget::Level(sub_lvl_ptr),
+                    PtrTarget::Level(new_level_ptr),
                     atomic::Ordering::AcqRel,
                     atomic::Ordering::Relaxed,
                 ) {
@@ -79,7 +79,7 @@ impl<T> Level<T> {
                             _ => unreachable!(),
                         };
 
-                        bucket.store(&PtrTarget::Level(new_level_ptr), atomic::Ordering::Release);
+                        bucket.store(PtrTarget::Level(new_level_ptr), atomic::Ordering::Release);
 
                         return;
                     }
@@ -89,8 +89,8 @@ impl<T> Level<T> {
                 let node_ptr = node as *const Entry<T> as *mut Entry<T>;
 
                 match chain.next.compare_exchange(
-                    &PtrTarget::Level(sub_lvl_ptr),
-                    &PtrTarget::Entry(node_ptr),
+                    PtrTarget::Level(sub_lvl_ptr),
+                    PtrTarget::Entry(node_ptr),
                     atomic::Ordering::AcqRel,
                     atomic::Ordering::Relaxed,
                 ) {
@@ -119,7 +119,7 @@ impl<T> Level<T> {
 
     fn adjust_node_on_level(&self, node: &Entry<T>) {
         node.next.store(
-            &PtrTarget::Level(self.get_own_ptr()),
+            PtrTarget::Level(self.get_own_ptr()),
             atomic::Ordering::Release,
         );
 
@@ -133,8 +133,8 @@ impl<T> Level<T> {
                 let node_ptr = node as *const Entry<T> as *mut Entry<T>;
 
                 match bucket.compare_exchange(
-                    &PtrTarget::Level(self.get_own_ptr()),
-                    &PtrTarget::Entry(node_ptr),
+                    PtrTarget::Level(self.get_own_ptr()),
+                    PtrTarget::Entry(node_ptr),
                     atomic::Ordering::AcqRel,
                     atomic::Ordering::Relaxed,
                 ) {
@@ -176,7 +176,7 @@ impl<T> Level<T> {
         let n_level = unsafe { &*n_level_ptr };
         n_level.adjust_chain_nodes(initial_entry);
 
-        bucket.store(&PtrTarget::Level(n_level_ptr), atomic::Ordering::Release);
+        bucket.store(PtrTarget::Level(n_level_ptr), atomic::Ordering::Release);
     }
 
     pub fn insert_level(&self, mut new_entry: Box<Entry<T>>) -> &T {
@@ -188,14 +188,14 @@ impl<T> Level<T> {
 
             if sub_lvl.level == self.level {
                 new_entry.next.store(
-                    &PtrTarget::Level(self.get_own_ptr()),
+                    PtrTarget::Level(self.get_own_ptr()),
                     atomic::Ordering::Release,
                 );
                 let new_entry_ptr = Box::into_raw(new_entry);
 
                 match bucket.compare_exchange(
-                    &PtrTarget::Level(sub_lvl_ptr),
-                    &PtrTarget::Entry(new_entry_ptr),
+                    PtrTarget::Level(sub_lvl_ptr),
+                    PtrTarget::Entry(new_entry_ptr),
                     atomic::Ordering::AcqRel,
                     atomic::Ordering::Relaxed,
                 ) {

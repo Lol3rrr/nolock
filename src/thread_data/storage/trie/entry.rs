@@ -64,8 +64,8 @@ impl<T> Entry<T> {
                     let n_level_ptr = Box::into_raw(n_level);
 
                     match self.next.compare_exchange(
-                        &expected,
-                        &PtrTarget::Level(n_level_ptr),
+                        expected,
+                        PtrTarget::Level(n_level_ptr),
                         atomic::Ordering::AcqRel,
                         atomic::Ordering::Relaxed,
                     ) {
@@ -76,14 +76,14 @@ impl<T> Entry<T> {
                     };
                 } else {
                     new_entry.next.store(
-                        &PtrTarget::Level(level.get_own_ptr()),
+                        PtrTarget::Level(level.get_own_ptr()),
                         atomic::Ordering::Release,
                     );
                     let n_entry_ptr = Box::into_raw(new_entry);
 
                     match self.next.compare_exchange(
-                        &expected,
-                        &PtrTarget::Entry(n_entry_ptr),
+                        expected,
+                        PtrTarget::Entry(n_entry_ptr),
                         atomic::Ordering::AcqRel,
                         atomic::Ordering::Relaxed,
                     ) {
