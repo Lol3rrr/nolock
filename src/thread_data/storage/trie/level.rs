@@ -217,7 +217,7 @@ impl<T> Level<T> {
             }
             PtrTarget::Entry(entry_ptr) => {
                 let entry = unsafe { &*entry_ptr };
-                entry.insert_chain(new_entry, self, 1)
+                entry.insert_chain(new_entry, self)
             }
         }
     }
