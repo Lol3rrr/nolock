@@ -1,4 +1,4 @@
-use std::sync::atomic;
+use std::{fmt::Debug, sync::atomic};
 
 use crate::thread_data::StorageBackend;
 
@@ -8,9 +8,41 @@ struct Entry<T> {
     next: atomic::AtomicPtr<Self>,
 }
 
+impl<T> Debug for Entry<T>
+where
+    T: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let next_ptr = self.next.load(atomic::Ordering::Acquire);
+
+        if next_ptr.is_null() {
+            write!(f, "Entry ({:?}) -> X", self.data)
+        } else {
+            let next = unsafe { &*next_ptr };
+            write!(f, "Entry ({:?}) -> {:?}", self.data, next)
+        }
+    }
+}
+
 /// TODO
 pub struct List<T> {
     entries: atomic::AtomicPtr<Entry<T>>,
+}
+
+impl<T> Debug for List<T>
+where
+    T: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let initial_entry_ptr = self.entries.load(atomic::Ordering::Acquire);
+        if initial_entry_ptr.is_null() {
+            return write!(f, "List ()");
+        }
+
+        let initial_entry = unsafe { &*initial_entry_ptr };
+
+        write!(f, "List ({:?})", initial_entry)
+    }
 }
 
 impl<T> List<T> {

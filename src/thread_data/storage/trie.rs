@@ -1,4 +1,6 @@
 mod level;
+use std::fmt::Debug;
+
 use level::Level;
 
 mod entry;
@@ -12,6 +14,16 @@ use crate::thread_data::StorageBackend;
 /// TODO
 pub struct Trie<T> {
     initial_ptr: *mut Level<T>,
+}
+
+impl<T> Debug for Trie<T>
+where
+    T: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let initial_level = unsafe { &*self.initial_ptr };
+        write!(f, "Trie ({:?})", initial_level)
+    }
 }
 
 impl<T> Trie<T> {
