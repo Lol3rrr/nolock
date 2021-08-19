@@ -59,44 +59,48 @@ impl<T> Level<T> {
                 let new_level = Level::new(self.level + 1, self.key_size, self.get_own_ptr());
                 let new_level_ptr = Box::into_raw(new_level);
 
-                match chain.next.compare_exchange(
-                    PtrTarget::Level(sub_lvl_ptr),
-                    PtrTarget::Level(new_level_ptr),
-                    atomic::Ordering::AcqRel,
-                    atomic::Ordering::Relaxed,
-                ) {
-                    Ok(_) => {
-                        let new_level = unsafe { &*new_level_ptr };
+                if chain
+                    .next
+                    .compare_exchange(
+                        PtrTarget::Level(sub_lvl_ptr),
+                        PtrTarget::Level(new_level_ptr),
+                        atomic::Ordering::AcqRel,
+                        atomic::Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    let new_level = unsafe { &*new_level_ptr };
 
-                        let bucket_index = Self::index(node.key(), self.level, self.key_size);
-                        let bucket = self.entries.get(bucket_index).expect("");
+                    let bucket_index = Self::index(node.key(), self.level, self.key_size);
+                    let bucket = self.entries.get(bucket_index).expect("");
 
-                        match bucket.load(atomic::Ordering::Acquire) {
-                            PtrTarget::Entry(bucket_entry_ptr) => {
-                                let bucket_entry = unsafe { &*bucket_entry_ptr };
-                                new_level.adjust_chain_nodes(bucket_entry);
-                            }
-                            _ => unreachable!(),
-                        };
+                    match bucket.load(atomic::Ordering::Acquire) {
+                        PtrTarget::Entry(bucket_entry_ptr) => {
+                            let bucket_entry = unsafe { &*bucket_entry_ptr };
+                            new_level.adjust_chain_nodes(bucket_entry);
+                        }
+                        _ => unreachable!(),
+                    };
 
-                        bucket.store(PtrTarget::Level(new_level_ptr), atomic::Ordering::Release);
+                    bucket.store(PtrTarget::Level(new_level_ptr), atomic::Ordering::Release);
 
-                        return;
-                    }
-                    Err(_) => {}
-                };
+                    return;
+                }
             } else {
                 let node_ptr = node as *const Entry<T> as *mut Entry<T>;
 
-                match chain.next.compare_exchange(
-                    PtrTarget::Level(sub_lvl_ptr),
-                    PtrTarget::Entry(node_ptr),
-                    atomic::Ordering::AcqRel,
-                    atomic::Ordering::Relaxed,
-                ) {
-                    Ok(_) => return,
-                    Err(_) => {}
-                };
+                if chain
+                    .next
+                    .compare_exchange(
+                        PtrTarget::Level(sub_lvl_ptr),
+                        PtrTarget::Entry(node_ptr),
+                        atomic::Ordering::AcqRel,
+                        atomic::Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    return;
+                }
             }
         }
 
@@ -132,15 +136,17 @@ impl<T> Level<T> {
             if sub_lvl.level() == self.level() {
                 let node_ptr = node as *const Entry<T> as *mut Entry<T>;
 
-                match bucket.compare_exchange(
-                    PtrTarget::Level(self.get_own_ptr()),
-                    PtrTarget::Entry(node_ptr),
-                    atomic::Ordering::AcqRel,
-                    atomic::Ordering::Relaxed,
-                ) {
-                    Ok(_) => return,
-                    Err(_) => {}
-                };
+                if bucket
+                    .compare_exchange(
+                        PtrTarget::Level(self.get_own_ptr()),
+                        PtrTarget::Entry(node_ptr),
+                        atomic::Ordering::AcqRel,
+                        atomic::Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    return;
+                }
             }
         }
 

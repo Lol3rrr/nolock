@@ -19,9 +19,9 @@ impl<T> From<*mut ()> for PtrTarget<T> {
         }
     }
 }
-impl<T> Into<*mut ()> for PtrTarget<T> {
-    fn into(self) -> *mut () {
-        match self {
+impl<T> From<PtrTarget<T>> for *mut () {
+    fn from(target: PtrTarget<T>) -> Self {
+        match target {
             PtrTarget::Entry(raw) => (raw as usize | ENTRY_MASK) as *mut (),
             PtrTarget::Level(raw) => raw as *mut (),
         }

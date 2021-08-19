@@ -132,6 +132,12 @@ impl<T> StorageBackend<T> for List<T> {
     }
 }
 
+impl<T> Default for List<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> Drop for List<T> {
     fn drop(&mut self) {
         let head_ptr = self.entries.load(atomic::Ordering::SeqCst);

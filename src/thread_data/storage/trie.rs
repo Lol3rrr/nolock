@@ -49,6 +49,12 @@ impl<T> StorageBackend<T> for Trie<T> {
     }
 }
 
+impl<T> Default for Trie<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> Drop for Trie<T> {
     fn drop(&mut self) {
         unsafe { Box::from_raw(self.initial_ptr) };

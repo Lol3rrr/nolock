@@ -65,17 +65,18 @@ impl<T> Entry<T> {
                             Level::new(level.level() + 1, level.key_size(), level.get_own_ptr());
                         let n_level_ptr = Box::into_raw(n_level);
 
-                        match current.next.compare_exchange(
-                            expected,
-                            PtrTarget::Level(n_level_ptr),
-                            atomic::Ordering::AcqRel,
-                            atomic::Ordering::Relaxed,
-                        ) {
-                            Ok(_) => {
-                                level.move_buckets_to_new_level(new_entry.key, n_level_ptr);
-                            }
-                            Err(_) => {}
-                        };
+                        if current
+                            .next
+                            .compare_exchange(
+                                expected,
+                                PtrTarget::Level(n_level_ptr),
+                                atomic::Ordering::AcqRel,
+                                atomic::Ordering::Relaxed,
+                            )
+                            .is_ok()
+                        {
+                            level.move_buckets_to_new_level(new_entry.key, n_level_ptr);
+                        }
                     } else {
                         new_entry.next.store(
                             PtrTarget::Level(level.get_own_ptr()),
@@ -118,7 +119,7 @@ impl<T> Entry<T> {
         }
     }
 
-    pub fn drop_entry(self: Box<Self>, level_ptr: *mut Level<T>) {
+    pub fn drop_entry(self, level_ptr: *mut Level<T>) {
         match self.next.load(atomic::Ordering::Acquire) {
             PtrTarget::Level(sub_lvl_ptr) => {
                 if sub_lvl_ptr == level_ptr {
