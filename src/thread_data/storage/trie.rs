@@ -11,8 +11,9 @@ use ptr::{CustomPtr, PtrTarget};
 
 use crate::thread_data::StorageBackend;
 
-/// TODO
+/// A Lock-Free Trie that can be used as the StorageBackend for Thread-Local-Data
 pub struct Trie<T> {
+    // The Pointer to the first Level
     initial_ptr: *mut Level<T>,
 }
 
@@ -21,6 +22,11 @@ where
     T: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Safety:
+        // This is save to do because we create the Pointer when creating the
+        // Trie meaning it is always going to be a valid pointer to a Level.
+        // The Memory being pointed to is also still valid because we only
+        // deallocate it once the Trie is dropped.
         let initial_level = unsafe { &*self.initial_ptr };
         write!(f, "Trie ({:?})", initial_level)
     }
@@ -39,11 +45,27 @@ impl<T> Trie<T> {
 
 impl<T> StorageBackend<T> for Trie<T> {
     fn get(&self, id: u64) -> Option<&T> {
+        // This simply "forwards" the get to the first initial Level of the
+        // Trie
+
+        // Safety:
+        // This is save to do because we create the Pointer when creating the
+        // Trie meaning it is always going to be a valid pointer to a Level.
+        // The Memory being pointed to is also still valid because we only
+        // deallocate it once the Trie is dropped.
         let level = unsafe { &*self.initial_ptr };
         level.get(id)
     }
 
     fn insert(&self, id: u64, data: T) -> &T {
+        // This simply "forwards" the insert to the first initial Level of the
+        // Trie
+
+        // Safety:
+        // This is save to do because we create the Pointer when creating the
+        // Trie meaning it is always going to be a valid pointer to a Level.
+        // The Memory being pointed to is also still valid because we only
+        // deallocate it once the Trie is dropped.
         let level = unsafe { &*self.initial_ptr };
         level.insert(id, data)
     }

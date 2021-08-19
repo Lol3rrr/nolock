@@ -24,7 +24,7 @@ where
     }
 }
 
-/// TODO
+/// A Lock-Free Linked-List
 pub struct List<T> {
     entries: atomic::AtomicPtr<Entry<T>>,
 }
@@ -46,14 +46,15 @@ where
 }
 
 impl<T> List<T> {
-    /// TODO
+    /// Creates a new empty Instance
     pub fn new() -> Self {
         Self {
             entries: atomic::AtomicPtr::new(std::ptr::null_mut()),
         }
     }
+}
 
-    /// TODO
+impl<T> StorageBackend<T> for List<T> {
     fn get(&self, id: u64) -> Option<&T> {
         let head_ptr = self.entries.load(atomic::Ordering::SeqCst);
         if head_ptr.is_null() {
@@ -74,8 +75,6 @@ impl<T> List<T> {
             current = unsafe { &*next_ptr };
         }
     }
-
-    /// TODO
     fn insert(&self, id: u64, data: T) -> &T {
         let new_entry_ptr = Box::into_raw(Box::new(Entry {
             id,
@@ -120,15 +119,6 @@ impl<T> List<T> {
                 current = unsafe { &*next_ptr };
             }
         }
-    }
-}
-
-impl<T> StorageBackend<T> for List<T> {
-    fn get(&self, id: u64) -> Option<&T> {
-        self.get(id)
-    }
-    fn insert(&self, id: u64, data: T) -> &T {
-        self.insert(id, data)
     }
 }
 
