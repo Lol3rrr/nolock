@@ -1,6 +1,37 @@
 //! # Thread-Local Lock-Free Storage
 //! This module provides a Datastructure for Thread-Local Storage that is also
 //! lock-free and is therefore useable in other lock-free Datastructures.
+//!
+//! # Example
+//! ```rust
+//! # use nolock::thread_data::ThreadData;
+//! # use std::sync::Arc;
+//! // Create the ThreadData Instance which can be shared between multiple
+//! // Threads using the Arc
+//! let local_data: Arc<ThreadData<usize>> = Arc::new(ThreadData::new());
+//!
+//! // Spawn 4 Threads and collect their Handles in a Vec
+//! let handles: Vec<_> = (0..4)
+//!     .map(|id| {
+//!         let c_data = local_data.clone();
+//!         std::thread::spawn(move || {
+//!             // Attempt to load the Data for the current Thread, which
+//!             // should not exist, and create the Data for it as the given id
+//!             let loaded = c_data.get_or(|| {
+//!                 id
+//!             });
+//!             // Return the loaded Data
+//!             *loaded
+//!         })
+//!     })
+//!     .collect();
+//!
+//! // Iterate over all the Threads and check that they all returned their ID
+//! for (index, handle) in handles.into_iter().enumerate() {
+//!     let returned_val = handle.join().unwrap();
+//!     assert_eq!(index, returned_val);
+//! }
+//! ```
 
 mod id;
 use std::fmt::Debug;
