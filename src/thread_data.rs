@@ -116,9 +116,13 @@ where
     where
         F: Fn() -> T,
     {
+        // First Attempt to load the Data
         let id = Id::new().as_u64();
         match self.storage.get(id) {
             Some(d) => d,
+            // If there is no Entry for the Data, create it with the given
+            // Function and insert it into the StorageBackend and return a
+            // reference to it
             None => {
                 let data = create();
                 self.storage.insert(id, data)
