@@ -27,6 +27,6 @@ impl PageMap {
     }
 
     pub fn load_descriptor(&self, ptr: *mut u8) -> *mut Descriptor {
-        todo!()
+        self.descriptors.get(ptr).expect("IDK")
     }
 }

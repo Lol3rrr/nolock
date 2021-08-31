@@ -8,6 +8,9 @@ struct Node {
 }
 
 impl Node {
+    /// Creates a new Node and allocates it using the System-Allocator
+    ///
+    /// The created node does not have a next Node set
     pub fn alloc_new(descriptor: *mut Descriptor) -> *mut Self {
         let node = Self {
             descriptor,
@@ -40,14 +43,14 @@ impl Collection {
         let new_node = Node::alloc_new(descriptor);
 
         loop {
-            let next_ptr = current.next.load(atomic::Ordering::AcqRel);
+            let next_ptr = current.next.load(atomic::Ordering::Acquire);
 
             if next_ptr.is_null() {
                 match current.next.compare_exchange(
                     std::ptr::null_mut(),
                     new_node,
                     atomic::Ordering::AcqRel,
-                    atomic::Ordering::AcqRel,
+                    atomic::Ordering::Acquire,
                 ) {
                     Ok(_) => return,
                     Err(ptr) => {
@@ -59,6 +62,39 @@ impl Collection {
             }
         }
     }
+
+    pub fn get(&self, ptr: *mut u8) -> Option<*mut Descriptor> {
+        let mut current = unsafe { &*self.head };
+
+        loop {
+            let desc_ptr = current.descriptor;
+            if !desc_ptr.is_null() {
+                let desc = unsafe { &*desc_ptr };
+                if desc.contains(ptr) {
+                    return Some(desc_ptr);
+                }
+            }
+
+            let next_ptr = current.next.load(atomic::Ordering::Acquire);
+            if next_ptr.is_null() {
+                return None;
+            }
+
+            current = unsafe { &*next_ptr };
+        }
+    }
 }
 
 unsafe impl Sync for Collection {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn insert_descriptor() {
+        let collection = Collection::new();
+
+        collection.insert(0x123 as *mut Descriptor);
+    }
+}

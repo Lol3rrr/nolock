@@ -3,7 +3,10 @@
 //! # References
 //! * [Paper - 'LRMalloc: a Modern and Competitive Lock-Free Dynamic Memory Allocator'](https://vecpar2018.ncc.unesp.br/wp-content/uploads/2018/09/VECPAR_2018_paper_27.pdf)
 
-use std::{alloc::GlobalAlloc, cell::RefCell};
+use std::{
+    alloc::{handle_alloc_error, GlobalAlloc},
+    cell::RefCell,
+};
 
 use lazy_static::lazy_static;
 
@@ -42,13 +45,17 @@ unsafe impl GlobalAlloc for Allocator {
         let size_class = match size_classes::get_size_class_index(layout.size()) {
             Some(s) => s,
             None => {
-                dbg!("Allocation is larger than largest Size-Class");
                 todo!("Allocation that is larger than the largest size-class");
             }
         };
 
         CACHE.with(|raw| {
-            let mut cache = raw.borrow_mut();
+            let mut cache = match raw.try_borrow_mut() {
+                Ok(r) => r,
+                Err(_) => {
+                    handle_alloc_error(layout);
+                }
+            };
 
             if let Some(ptr) = cache.try_alloc(size_class) {
                 return ptr;
@@ -60,9 +67,9 @@ unsafe impl GlobalAlloc for Allocator {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
-        // TODO
-        // Actually load the Size-Class from the PageMap
-        let size_class = 0;
+        let desc_ptr = PAGEMAP.load_descriptor(ptr);
+        let desc = unsafe { &*desc_ptr };
+        let size_class = desc.size_class();
 
         CACHE.with(|raw| {
             let mut cache = raw.borrow_mut();
@@ -70,9 +77,9 @@ unsafe impl GlobalAlloc for Allocator {
             match cache.add_block(size_class, ptr) {
                 Ok(_) => return,
                 Err(_) => {
-                    dbg!("Cache is already full");
                     // TODO
                     // Flush the Cache
+                    handle_alloc_error(layout);
                 }
             };
         });
