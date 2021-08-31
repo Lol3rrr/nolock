@@ -18,8 +18,9 @@ queues = []
 thread_data = []
 hazard_ptr = ["queues", "lazy_static", "thread_data"]
 hash_trie = ["hazard_ptr"]
+allocator = ["lazy_static"]
 async = ["futures"]
-full = ["queues", "async", "hazard_ptr"]
+full = ["queues", "allocator", "async", "hazard_ptr"]
 
 [dependencies]
 futures = { version = "0.3", optional = true, default_features = false }

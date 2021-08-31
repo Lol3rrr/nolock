@@ -7,11 +7,14 @@
 //! * `async`: Enables all the Async-Version of the Algorithms/Datastructures
 //! * `thread_data`: Enables the ThreadData Module
 //! * `hazard_ptr`: Enables the Hazard-Ptr implementation
+//! * `allocator`: Enables the Allocators
 //! * `full`: Enables all the Feature-Flags
 //!
 //! # Experimental-Feature-Flags
 //! * `hash_trie`: Enables the Hash-Trie-Map implementation
 
+#[cfg(feature = "allocator")]
+pub mod allocator;
 #[cfg(feature = "hash_trie")]
 pub mod hash_trie;
 #[cfg(feature = "hazard_ptr")]

@@ -1,0 +1,80 @@
+//! A lock-free Allocator
+//!
+//! # References
+//! * [Paper - 'LRMalloc: a Modern and Competitive Lock-Free Dynamic Memory Allocator'](https://vecpar2018.ncc.unesp.br/wp-content/uploads/2018/09/VECPAR_2018_paper_27.pdf)
+
+use std::{alloc::GlobalAlloc, cell::RefCell};
+
+use lazy_static::lazy_static;
+
+mod cache;
+mod size_classes;
+use cache::Cache;
+mod heap;
+use heap::Heap;
+mod pagemap;
+use pagemap::PageMap;
+
+mod descriptor;
+
+lazy_static! {
+    static ref HEAP: Heap = Heap::new();
+    static ref PAGEMAP: PageMap = PageMap::new();
+}
+
+thread_local! {
+    static CACHE: RefCell<Cache> = RefCell::new(Cache::new());
+}
+
+/// TODO
+#[derive(Debug)]
+pub struct Allocator {}
+
+impl Allocator {
+    /// TODO
+    pub const fn new() -> Self {
+        Self {}
+    }
+}
+
+unsafe impl GlobalAlloc for Allocator {
+    unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
+        let size_class = match size_classes::get_size_class_index(layout.size()) {
+            Some(s) => s,
+            None => {
+                dbg!("Allocation is larger than largest Size-Class");
+                todo!("Allocation that is larger than the largest size-class");
+            }
+        };
+
+        CACHE.with(|raw| {
+            let mut cache = raw.borrow_mut();
+
+            if let Some(ptr) = cache.try_alloc(size_class) {
+                return ptr;
+            }
+
+            HEAP.fill_cache(&mut cache, size_class);
+            cache.try_alloc(size_class).expect("We just filled the Cache with new Blocks, so there should at least be one available block to use for the Allocation")
+        })
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
+        // TODO
+        // Actually load the Size-Class from the PageMap
+        let size_class = 0;
+
+        CACHE.with(|raw| {
+            let mut cache = raw.borrow_mut();
+
+            match cache.add_block(size_class, ptr) {
+                Ok(_) => return,
+                Err(_) => {
+                    dbg!("Cache is already full");
+                    // TODO
+                    // Flush the Cache
+                }
+            };
+        });
+    }
+}

@@ -84,10 +84,7 @@ impl<T> ThreadDataStorage<storage::List<T>, T> {
     }
 }
 
-impl<S, T> ThreadDataStorage<S, T>
-where
-    S: StorageBackend<T>,
-{
+impl<S, T> ThreadDataStorage<S, T> {
     /// Creates a new Instance which uses the given Storage-Backend for all the
     /// Data.
     ///
@@ -96,13 +93,18 @@ where
     /// with it.
     /// Otherwise you should just use [`ThreadData::<T>::new()`] to create a
     /// ThreadDataStorage instance with the Trie StorageBackend
-    pub fn new_storage(storage: S) -> Self {
+    pub const fn new_storage(storage: S) -> Self {
         Self {
             storage,
-            _marker: std::marker::PhantomData::default(),
+            _marker: std::marker::PhantomData {},
         }
     }
+}
 
+impl<S, T> ThreadDataStorage<S, T>
+where
+    S: StorageBackend<T>,
+{
     /// Attempts to load the stored Data for the current Thread
     pub fn get(&self) -> Option<&T> {
         let id = Id::new().as_u64();
