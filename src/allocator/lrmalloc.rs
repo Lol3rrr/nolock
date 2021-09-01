@@ -45,7 +45,7 @@ unsafe impl GlobalAlloc for Allocator {
         let size_class = match size_classes::get_size_class_index(layout.size()) {
             Some(s) => s,
             None => {
-                todo!("Allocation that is larger than the largest size-class");
+                return HEAP.allocate_large(layout);
             }
         };
 
@@ -69,7 +69,13 @@ unsafe impl GlobalAlloc for Allocator {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
         let desc_ptr = PAGEMAP.load_descriptor(ptr);
         let desc = unsafe { &*desc_ptr };
-        let size_class = desc.size_class();
+        let size_class = match desc.size_class() {
+            Some(s) => s,
+            None => {
+                HEAP.free_large(ptr, layout);
+                return;
+            }
+        };
 
         CACHE.with(|raw| {
             let mut cache = raw.borrow_mut();

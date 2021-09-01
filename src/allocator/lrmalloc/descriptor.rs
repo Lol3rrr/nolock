@@ -10,14 +10,14 @@ pub struct Descriptor {
     super_block: *mut u8,
     block_size: usize,
     max_count: usize,
-    size_class: usize,
+    size_class: Option<usize>,
 }
 
 impl Descriptor {
     pub fn new(
         block_size: usize,
         max_count: usize,
-        size_class: usize,
+        size_class: Option<usize>,
         super_block: *mut u8,
     ) -> Self {
         Self {
@@ -35,7 +35,7 @@ impl Descriptor {
     pub fn block_size(&self) -> usize {
         self.block_size
     }
-    pub fn size_class(&self) -> usize {
+    pub fn size_class(&self) -> Option<usize> {
         self.size_class
     }
     pub fn superblock_ptr(&self) -> *mut u8 {
@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn contains() {
-        let descriptor = Descriptor::new(0x8, 2, 0, 0xff as *mut u8);
+        let descriptor = Descriptor::new(0x8, 2, Some(0), 0xff as *mut u8);
 
         assert_eq!(false, descriptor.contains(0xf0 as *mut u8));
         assert_eq!(true, descriptor.contains(0xff as *mut u8));
@@ -90,7 +90,7 @@ mod tests {
 
     #[test]
     fn calc_index() {
-        let descriptor = Descriptor::new(0x8, 2, 0, 0xff as *mut u8);
+        let descriptor = Descriptor::new(0x8, 2, Some(0), 0xff as *mut u8);
 
         assert_eq!(0, descriptor.calc_index(0xff as *mut u8));
         assert_eq!(2, descriptor.calc_index((0xff + 0x8 * 2) as *mut u8));

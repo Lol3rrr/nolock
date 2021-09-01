@@ -21,6 +21,14 @@ impl Heap {
         }
     }
 
+    pub fn allocate_large(&self, layout: std::alloc::Layout) -> *mut u8 {
+        todo!("Large Allocations are not yet supported");
+    }
+    pub fn free_large(&self, ptr: *mut u8, layout: std::alloc::Layout) {
+        // TODO
+        // Implement deallocating large allocations
+    }
+
     pub fn flush_cache(&self, cache: &mut Cache, size_class: usize) {
         let mut flush_iter = cache.flush(size_class).peekable();
 
@@ -119,8 +127,7 @@ impl Heap {
         loop {
             old_anchor = desc.anchor();
             if let AnchorState::Empty = old_anchor.state {
-                // TODO
-                // Retire the Descriptor
+                self.retire_descriptor(desc_ptr);
                 return self.fill_cache_from_partial(cache, size_class);
             }
 
@@ -178,10 +185,8 @@ impl Heap {
         let superblock_layout = std::alloc::Layout::from_size_align(superblock_size, 8).unwrap();
         let superblock_ptr = unsafe { std::alloc::System.alloc(superblock_layout) };
 
-        let descriptor = Descriptor::new(block_size, N, size_class, superblock_ptr);
-        let descriptor_ptr =
-            unsafe { std::alloc::System.alloc(std::alloc::Layout::new::<Descriptor>()) }
-                as *mut Descriptor;
+        let descriptor = Descriptor::new(block_size, N, Some(size_class), superblock_ptr);
+        let descriptor_ptr = self.alloc_descriptor();
         unsafe { descriptor_ptr.write(descriptor) };
 
         descriptor_ptr
@@ -191,5 +196,18 @@ impl Heap {
         let size = block_size * block_count;
         let layout = std::alloc::Layout::from_size_align(size, 8).unwrap();
         unsafe { std::alloc::System.dealloc(superblock_ptr, layout) };
+    }
+
+    // TODO
+    // Instead of using the System-Allocator for all the Descriptors and then simply leaking them,
+    // we should instead keep a collection of retired descriptors and then first attempt to load
+    // a free one from that collection
+    fn alloc_descriptor(&self) -> *mut Descriptor {
+        let layout = std::alloc::Layout::new::<Descriptor>();
+        let raw_ptr = unsafe { std::alloc::System.alloc(layout) };
+        raw_ptr as *mut Descriptor
+    }
+    fn retire_descriptor(&self, desc: *mut Descriptor) {
+        dbg!(desc);
     }
 }
