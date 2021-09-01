@@ -77,9 +77,8 @@ unsafe impl GlobalAlloc for Allocator {
             match cache.add_block(size_class, ptr) {
                 Ok(_) => return,
                 Err(_) => {
-                    // TODO
-                    // Flush the Cache
-                    handle_alloc_error(layout);
+                    HEAP.flush_cache(&mut cache, size_class);
+                    cache.add_block(size_class, ptr).unwrap();
                 }
             };
         });

@@ -1,3 +1,5 @@
+use std::{fmt::Debug, sync::atomic};
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum AnchorState {
     Empty,
@@ -25,20 +27,20 @@ impl From<AnchorState> for u64 {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Anchor {
-    state: AnchorState,
+    pub state: AnchorState,
     /// The First Available Block in the Super-Block
-    avail: u32,
+    pub avail: u32,
     /// The Number of Free-Blocks
-    count: u32,
+    pub count: u32,
 }
 
 impl Anchor {
-    pub fn new(available: u32) -> Self {
+    pub fn new(max_count: u32) -> Self {
         Self {
             state: AnchorState::Full,
-            avail: available,
+            avail: max_count,
             count: 0,
         }
     }
@@ -68,6 +70,40 @@ impl From<Anchor> for u64 {
         let count_bits: u64 = raw.count as u64;
 
         state_bits | avail_bits | count_bits
+    }
+}
+
+pub struct AtomicAnchor(atomic::AtomicU64);
+
+impl AtomicAnchor {
+    pub fn new(initial: Anchor) -> Self {
+        Self(atomic::AtomicU64::new(initial.into()))
+    }
+
+    pub fn load(&self, order: atomic::Ordering) -> Anchor {
+        self.0.load(order).into()
+    }
+
+    pub fn compare_exchange(
+        &self,
+        current: Anchor,
+        new: Anchor,
+        success: atomic::Ordering,
+        failure: atomic::Ordering,
+    ) -> Result<Anchor, Anchor> {
+        match self
+            .0
+            .compare_exchange(current.into(), new.into(), success, failure)
+        {
+            Ok(raw) => Ok(raw.into()),
+            Err(raw) => Err(raw.into()),
+        }
+    }
+}
+
+impl Debug for AtomicAnchor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.load(atomic::Ordering::SeqCst).fmt(f)
     }
 }
 
