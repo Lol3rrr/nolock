@@ -10,6 +10,8 @@ use std::{
 
 use lazy_static::lazy_static;
 
+mod util;
+
 mod cache;
 mod size_classes;
 use cache::Cache;
@@ -69,6 +71,7 @@ unsafe impl GlobalAlloc for Allocator {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
         let desc_ptr = PAGEMAP.load_descriptor(ptr);
         let desc = unsafe { &*desc_ptr };
+
         let size_class = match desc.size_class() {
             Some(s) => s,
             None => {

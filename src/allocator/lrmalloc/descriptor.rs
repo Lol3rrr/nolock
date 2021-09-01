@@ -48,7 +48,7 @@ impl Descriptor {
     pub fn contains(&self, ptr: *mut u8) -> bool {
         let ptr_value = ptr as usize;
         let lower_bound = self.super_block as usize;
-        let upper_bound = lower_bound + self.block_size * self.max_count;
+        let upper_bound = lower_bound + (self.block_size - 1) * self.max_count;
 
         lower_bound <= ptr_value && ptr_value <= upper_bound
     }
@@ -83,9 +83,8 @@ mod tests {
 
         assert_eq!(false, descriptor.contains(0xf0 as *mut u8));
         assert_eq!(true, descriptor.contains(0xff as *mut u8));
-        assert_eq!(true, descriptor.contains((0xff + 0x8 * 2) as *mut u8));
-        assert_eq!(true, descriptor.contains((0xff + 0x8) as *mut u8));
-        assert_eq!(false, descriptor.contains((0xff + 0x8 * 3) as *mut u8));
+        assert_eq!(true, descriptor.contains((0xff + 0x8 * 1) as *mut u8));
+        assert_eq!(false, descriptor.contains((0xff + 0x8 * 2) as *mut u8));
     }
 
     #[test]

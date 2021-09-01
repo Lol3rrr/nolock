@@ -8,16 +8,19 @@ use super::{
 
 use std::{alloc::GlobalAlloc, sync::atomic};
 
+mod descriptors;
 mod stack;
 
 pub struct Heap {
     partial: [stack::DescriptorCollection; size_classes::size_class_count()],
+    recycled_desc: descriptors::RecycleList,
 }
 
 impl Heap {
     pub fn new() -> Self {
         Self {
             partial: Default::default(),
+            recycled_desc: descriptors::RecycleList::new(),
         }
     }
 
@@ -212,11 +215,15 @@ impl Heap {
     // we should instead keep a collection of retired descriptors and then first attempt to load
     // a free one from that collection
     fn alloc_descriptor(&self) -> *mut Descriptor {
+        if let Some(ptr) = self.recycled_desc.get_descriptor() {
+            return ptr;
+        }
+
         let layout = std::alloc::Layout::new::<Descriptor>();
         let raw_ptr = unsafe { std::alloc::System.alloc(layout) };
         raw_ptr as *mut Descriptor
     }
     fn retire_descriptor(&self, desc: *mut Descriptor) {
-        dbg!(desc);
+        self.recycled_desc.add_descriptor(desc);
     }
 }
