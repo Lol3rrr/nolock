@@ -22,11 +22,19 @@ impl Heap {
     }
 
     pub fn allocate_large(&self, layout: std::alloc::Layout) -> *mut u8 {
-        todo!("Large Allocations are not yet supported");
+        let desc_ptr = self.new_superblock::<1>(layout.size(), None);
+
+        PAGEMAP.register_descriptor(desc_ptr);
+
+        let desc = unsafe { &*desc_ptr };
+        desc.superblock_ptr()
     }
     pub fn free_large(&self, ptr: *mut u8, layout: std::alloc::Layout) {
-        // TODO
-        // Implement deallocating large allocations
+        let desc_ptr = PAGEMAP.load_descriptor(ptr);
+        let desc = unsafe { &*desc_ptr };
+
+        self.free_superblock(layout.size(), 1, desc.superblock_ptr());
+        self.retire_descriptor(desc_ptr);
     }
 
     pub fn flush_cache(&self, cache: &mut Cache, size_class: usize) {
@@ -160,7 +168,9 @@ impl Heap {
     fn fill_cache_from_new(&self, cache: &mut Cache, size_class: usize) {
         const MAX_COUNT: usize = 32;
 
-        let descriptor_ptr = self.new_superblock::<MAX_COUNT>(size_class);
+        let block_size = size_classes::get_block_size(size_class);
+
+        let descriptor_ptr = self.new_superblock::<MAX_COUNT>(block_size, Some(size_class));
         let descriptor = unsafe { &*descriptor_ptr };
 
         for block_index in 0..MAX_COUNT {
@@ -177,15 +187,19 @@ impl Heap {
     ///
     /// # Params
     /// * `N`: The Number of blocks in the Superblock
+    /// * `block_size`: The Size of each block in the SuperBlock
     /// * `size_class`: The Size-Class for the Blocks in the SuperBlock
-    fn new_superblock<const N: usize>(&self, size_class: usize) -> *mut Descriptor {
-        let block_size = size_classes::get_block_size(size_class);
+    fn new_superblock<const N: usize>(
+        &self,
+        block_size: usize,
+        size_class: Option<usize>,
+    ) -> *mut Descriptor {
         let superblock_size = block_size * N;
 
         let superblock_layout = std::alloc::Layout::from_size_align(superblock_size, 8).unwrap();
         let superblock_ptr = unsafe { std::alloc::System.alloc(superblock_layout) };
 
-        let descriptor = Descriptor::new(block_size, N, Some(size_class), superblock_ptr);
+        let descriptor = Descriptor::new(block_size, N, size_class, superblock_ptr);
         let descriptor_ptr = self.alloc_descriptor();
         unsafe { descriptor_ptr.write(descriptor) };
 
