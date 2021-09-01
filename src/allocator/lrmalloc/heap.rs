@@ -51,12 +51,7 @@ impl Heap {
             let head_desc = unsafe { &*head_desc_ptr };
             let mut block_count = 1;
 
-            loop {
-                let block = match flush_iter.peek() {
-                    Some(b) => b,
-                    None => break,
-                };
-
+            while let Some(block) = flush_iter.peek() {
                 if !head_desc.contains(*block) {
                     break;
                 }
@@ -74,7 +69,7 @@ impl Heap {
             let mut new_anchor;
             loop {
                 old_anchor = head_desc.anchor();
-                new_anchor = old_anchor.clone();
+                new_anchor = old_anchor;
 
                 let old_first_ptr = ((superblock_ptr as usize)
                     + old_anchor.avail as usize * head_desc.block_size() as usize)
@@ -175,7 +170,7 @@ impl Heap {
 
         for block_index in 0..MAX_COUNT {
             let offset = descriptor.block_size() * block_index;
-            let block_ptr = unsafe { descriptor.superblock_ptr().offset(offset as isize) };
+            let block_ptr = unsafe { descriptor.superblock_ptr().add(offset) };
 
             cache.add_block(size_class, block_ptr).expect("");
         }

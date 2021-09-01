@@ -80,12 +80,9 @@ unsafe impl GlobalAlloc for Allocator {
         CACHE.with(|raw| {
             let mut cache = raw.borrow_mut();
 
-            match cache.add_block(size_class, ptr) {
-                Ok(_) => return,
-                Err(_) => {
-                    HEAP.flush_cache(&mut cache, size_class);
-                    cache.add_block(size_class, ptr).unwrap();
-                }
+            if cache.add_block(size_class, ptr).is_err() {
+                HEAP.flush_cache(&mut cache, size_class);
+                cache.add_block(size_class, ptr).unwrap();
             };
         });
     }

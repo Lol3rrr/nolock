@@ -1,0 +1,5 @@
+disallowed-methods = [
+	# This crate should never contain any locks, as this is strictly lockfree
+	"std::sync::Mutex::new",
+	"std::sync::RwLock::new",
+]
