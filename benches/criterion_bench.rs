@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main};
 
+mod allocator;
 mod hash_trie;
 mod mpmc;
 mod mpsc;
@@ -32,4 +33,10 @@ criterion_group!(
     thread_data::storage::trie::gets,
 );
 
-criterion_main!(queues, maps, thread_data_storage);
+criterion_group!(
+    allocator,
+    allocator::lrmalloc::allocate_deallocate,
+    allocator::system_alloc::allocate_deallocate
+);
+
+criterion_main!(queues, maps, thread_data_storage, allocator);
