@@ -51,7 +51,6 @@ impl RecycleList {
                 )
                 .is_ok()
             {
-                dbg!(ptr);
                 return Some(ptr);
             }
         }

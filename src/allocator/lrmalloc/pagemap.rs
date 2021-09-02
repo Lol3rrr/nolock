@@ -26,8 +26,7 @@ impl PageMap {
         self.descriptors.insert(descriptor);
     }
     pub fn unregister_descriptor(&self, descriptor: *mut Descriptor) {
-        // TODO
-        // Actually unregister the given Descriptor
+        self.descriptors.remove(descriptor);
     }
 
     pub fn load_descriptor(&self, ptr: *mut u8) -> *mut Descriptor {

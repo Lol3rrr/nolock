@@ -1,86 +1,72 @@
-use std::{alloc::GlobalAlloc, sync::atomic};
+use std::sync::atomic;
 
-use crate::allocator::lrmalloc::descriptor::Descriptor;
-
-struct Node {
-    descriptor: *mut Descriptor,
-    next: atomic::AtomicPtr<Self>,
-}
-
-impl Node {
-    /// Creates a new Node and allocates it using the System-Allocator
-    ///
-    /// The created node does not have a next Node set
-    pub fn alloc_new(descriptor: *mut Descriptor) -> *mut Self {
-        let node = Self {
-            descriptor,
-            next: atomic::AtomicPtr::new(std::ptr::null_mut()),
-        };
-
-        let layout = std::alloc::Layout::new::<Self>();
-        let raw_ptr = unsafe { std::alloc::System.alloc(layout) } as *mut Self;
-
-        unsafe { raw_ptr.write(node) };
-
-        raw_ptr
-    }
-}
+use crate::allocator::lrmalloc::{descriptor::Descriptor, util::list::List};
 
 pub struct Collection {
-    head: *mut Node,
+    list: List<atomic::AtomicPtr<Descriptor>>,
 }
 
 impl Collection {
     pub fn new() -> Self {
         Self {
-            head: Node::alloc_new(std::ptr::null_mut()),
+            list: List::new(atomic::AtomicPtr::new(std::ptr::null_mut())),
         }
     }
 
     pub fn insert(&self, descriptor: *mut Descriptor) {
-        let mut current = unsafe { &*self.head };
+        for a_ptr in self.list.iter() {
+            if !a_ptr.load(atomic::Ordering::Acquire).is_null() {
+                continue;
+            }
 
-        let new_node = Node::alloc_new(descriptor);
-
-        loop {
-            let next_ptr = current.next.load(atomic::Ordering::Acquire);
-
-            if next_ptr.is_null() {
-                match current.next.compare_exchange(
+            if a_ptr
+                .compare_exchange(
                     std::ptr::null_mut(),
-                    new_node,
+                    descriptor,
                     atomic::Ordering::AcqRel,
-                    atomic::Ordering::Acquire,
-                ) {
-                    Ok(_) => return,
-                    Err(ptr) => {
-                        current = unsafe { &*ptr };
-                    }
-                };
-            } else {
-                current = unsafe { &*next_ptr };
+                    atomic::Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                return;
             }
         }
+
+        self.list.append(atomic::AtomicPtr::new(descriptor));
     }
 
     pub fn get(&self, ptr: *mut u8) -> Option<*mut Descriptor> {
-        let mut current = unsafe { &*self.head };
-
-        loop {
-            let desc_ptr = current.descriptor;
-            if !desc_ptr.is_null() {
-                let desc = unsafe { &*desc_ptr };
-                if desc.contains(ptr) {
-                    return Some(desc_ptr);
-                }
+        for a_ptr in self.list.iter() {
+            let desc_ptr = a_ptr.load(atomic::Ordering::Acquire);
+            if desc_ptr.is_null() {
+                continue;
             }
 
-            let next_ptr = current.next.load(atomic::Ordering::Acquire);
-            if next_ptr.is_null() {
-                return None;
+            let desc = unsafe { &*desc_ptr };
+
+            if desc.contains(ptr) {
+                return Some(desc_ptr);
+            }
+        }
+
+        None
+    }
+
+    pub fn remove(&self, descriptor: *mut Descriptor) {
+        for a_ptr in self.list.iter() {
+            let desc_ptr = a_ptr.load(atomic::Ordering::Acquire);
+            if desc_ptr.is_null() {
+                continue;
             }
 
-            current = unsafe { &*next_ptr };
+            if desc_ptr == descriptor {
+                let _ = a_ptr.compare_exchange(
+                    desc_ptr,
+                    std::ptr::null_mut(),
+                    atomic::Ordering::AcqRel,
+                    atomic::Ordering::Relaxed,
+                );
+            }
         }
     }
 }
