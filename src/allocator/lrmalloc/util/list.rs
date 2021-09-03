@@ -25,6 +25,14 @@ impl<T> Node<T> {
 
         ptr
     }
+
+    pub fn dealloc<G>(ptr: *mut Self, allocator: &G)
+    where
+        G: GlobalAlloc,
+    {
+        let layout = std::alloc::Layout::new::<Self>();
+        unsafe { allocator.dealloc(ptr as *mut u8, layout) };
+    }
 }
 
 struct NodeIter<T> {
@@ -103,6 +111,14 @@ impl<T> List<T> {
 }
 
 unsafe impl<T> Sync for List<T> {}
+
+impl<T> Drop for List<T> {
+    fn drop(&mut self) {
+        for node_ptr in self.node_iter() {
+            Node::dealloc(node_ptr, &std::alloc::System);
+        }
+    }
+}
 
 pub struct ListIter<'iter, T> {
     node_iter: NodeIter<T>,
