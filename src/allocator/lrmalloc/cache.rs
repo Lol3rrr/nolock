@@ -12,7 +12,7 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             stacks: [Stack::new(); size_classes::size_class_count()],
         }

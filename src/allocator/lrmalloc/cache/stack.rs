@@ -5,7 +5,7 @@ pub struct Stack<T, const N: usize> {
 }
 
 impl<T, const N: usize> Stack<T, N> {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             buffer: [std::ptr::null_mut(); N],
             used: 0,
