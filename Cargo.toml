@@ -28,9 +28,13 @@ lazy_static = { version = "1.4", optional = true }
 
 [dev-dependencies]
 rand = { version = "0.8" }
+pprof = { version = "0.3", features = ["flamegraph"] }
 criterion = { version = "0.3" }
 iai = { version = "0.1" }
 tokio = { version = "1.8", features = ["rt", "macros", "test-util"] }
+
+[profile.bench]
+debug = true
 
 [[bench]]
 name = "criterion_bench"

@@ -23,3 +23,9 @@ These are Features that may still contain bugs or are not complete yet
 Name | Default | Description
 --- | --- | ---
 hash_trie | true | Enables the Hash-Trie-Map implementation
+
+
+## Development
+### Benchmarking
+* Running benchmarks using `cargo bench --bench criterion_bench --`
+* Running benchmarks with profiling using `cargo bench --bench criterion_bench -- --profile-time=5`

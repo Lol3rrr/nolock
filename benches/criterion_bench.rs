@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 mod allocator;
 mod hash_trie;
@@ -6,6 +6,8 @@ mod mpmc;
 mod mpsc;
 mod spsc;
 mod thread_data;
+
+mod profiler;
 
 criterion_group!(
     maps,
@@ -33,10 +35,10 @@ criterion_group!(
     thread_data::storage::trie::gets,
 );
 
-criterion_group!(
-    allocator,
-    allocator::lrmalloc::allocate_deallocate,
-    allocator::system_alloc::allocate_deallocate
-);
+criterion_group! {
+    name = allocator;
+    config = Criterion::default().with_profiler(profiler::FlamegraphProfiler::new(100));
+    targets = allocator::lrmalloc::allocate_deallocate, allocator::lrmalloc::allocate, allocator::lrmalloc::deallocate, allocator::system_alloc::allocate_deallocate, allocator::system_alloc::allocate, allocator::system_alloc::deallocate,
+}
 
 criterion_main!(queues, maps, thread_data_storage, allocator);

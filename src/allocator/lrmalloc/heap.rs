@@ -3,7 +3,9 @@ use crate::allocator::lrmalloc::descriptor::Anchor;
 use super::{
     cache::Cache,
     descriptor::{AnchorState, Descriptor},
-    size_classes, PAGEMAP,
+    size_classes,
+    util::traits::InternalAlloc,
+    PAGEMAP,
 };
 
 use std::{alloc::GlobalAlloc, sync::atomic};
@@ -25,7 +27,7 @@ impl Heap {
     }
 
     pub fn allocate_large(&self, layout: std::alloc::Layout) -> *mut u8 {
-        let desc_ptr = self.new_superblock::<1>(layout.size(), None);
+        let desc_ptr = self.new_superblock::<_, 1>(layout.size(), None, &std::alloc::System);
 
         PAGEMAP.register_descriptor(desc_ptr);
 
@@ -168,7 +170,8 @@ impl Heap {
 
         let block_size = size_classes::get_block_size(size_class);
 
-        let descriptor_ptr = self.new_superblock::<MAX_COUNT>(block_size, Some(size_class));
+        let descriptor_ptr =
+            self.new_superblock::<_, MAX_COUNT>(block_size, Some(size_class), &std::alloc::System);
         let descriptor = unsafe { &*descriptor_ptr };
 
         for block_index in 0..MAX_COUNT {
@@ -187,15 +190,19 @@ impl Heap {
     /// * `N`: The Number of blocks in the Superblock
     /// * `block_size`: The Size of each block in the SuperBlock
     /// * `size_class`: The Size-Class for the Blocks in the SuperBlock
-    fn new_superblock<const N: usize>(
+    fn new_superblock<A, const N: usize>(
         &self,
         block_size: usize,
         size_class: Option<usize>,
-    ) -> *mut Descriptor {
+        allocator: &A,
+    ) -> *mut Descriptor
+    where
+        A: InternalAlloc,
+    {
         let superblock_size = block_size * N;
 
         let superblock_layout = std::alloc::Layout::from_size_align(superblock_size, 8).unwrap();
-        let superblock_ptr = unsafe { std::alloc::System.alloc(superblock_layout) };
+        let superblock_ptr = allocator.allocate(superblock_layout);
 
         let descriptor = Descriptor::new(block_size, N, size_class, superblock_ptr);
         let descriptor_ptr = self.alloc_descriptor();
@@ -211,9 +218,8 @@ impl Heap {
     }
 
     // TODO
-    // Instead of using the System-Allocator for all the Descriptors and then simply leaking them,
-    // we should instead keep a collection of retired descriptors and then first attempt to load
-    // a free one from that collection
+    // Right now we are using the system-allocator for all new descriptors,
+    // we might switch to using a simple bump allocator for all the descriptors
     fn alloc_descriptor(&self) -> *mut Descriptor {
         if let Some(ptr) = self.recycled_desc.get_descriptor() {
             return ptr;
@@ -225,5 +231,11 @@ impl Heap {
     }
     fn retire_descriptor(&self, desc: *mut Descriptor) {
         self.recycled_desc.add_descriptor(desc);
+    }
+}
+
+impl Drop for Heap {
+    fn drop(&mut self) {
+        dbg!("Dropped");
     }
 }
