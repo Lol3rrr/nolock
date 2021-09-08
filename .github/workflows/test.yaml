@@ -93,4 +93,8 @@ jobs:
           rustup override set "$MIRI_NIGHTLY"
           rustup component add miri
       - name: Run Miri
+        env:
+          # This is needed because some parts of the Allocator are never dropped and therefore also never
+          # get Freed properly causing miri to detect them as memory leaks
+          MIRIFLAGS: "-Zmiri-ignore-leaks"
         run: cargo miri test allocator
