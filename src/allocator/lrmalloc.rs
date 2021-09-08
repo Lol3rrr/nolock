@@ -31,12 +31,17 @@ thread_local! {
     static CACHE: RefCell<Cache> = RefCell::new(Cache::new());
 }
 
-/// TODO
+/// The actual Allocator Struct, which can be used for allocating and freeing memory
 #[derive(Debug)]
 pub struct Allocator {}
 
 impl Allocator {
-    /// TODO
+    /// Creates a new Instance of the Allocator
+    ///
+    /// # Note
+    /// All Instances of the Allocator share some amount of Data, so they are currently not
+    /// independant of each other.
+    /// You should only create a single Instance for use as the Global-Allocator of your program
     pub const fn new() -> Self {
         Self {}
     }
