@@ -166,7 +166,7 @@ impl Heap {
     }
 
     fn fill_cache_from_new(&self, cache: &mut Cache, size_class: usize) {
-        const MAX_COUNT: usize = 32;
+        const MAX_COUNT: usize = Cache::get_stack_size();
 
         let block_size = size_classes::get_block_size(size_class);
 

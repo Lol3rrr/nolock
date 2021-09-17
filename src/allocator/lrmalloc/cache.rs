@@ -6,9 +6,11 @@ use stack::Stack;
 mod flush_iter;
 pub use flush_iter::FlushIter;
 
+const STACK_SIZE: usize = 32;
+
 #[derive(Debug)]
 pub struct Cache {
-    stacks: [Stack<u8, 32>; size_classes::size_class_count()],
+    stacks: [Stack<u8, STACK_SIZE>; size_classes::size_class_count()],
 }
 
 impl Cache {
@@ -16,6 +18,11 @@ impl Cache {
         Self {
             stacks: [Stack::new(); size_classes::size_class_count()],
         }
+    }
+
+    /// Gets the fixed size of the Stacks used by the Cache
+    pub const fn get_stack_size() -> usize {
+        STACK_SIZE
     }
 
     pub fn try_alloc(&mut self, size_class: usize) -> Option<*mut u8> {

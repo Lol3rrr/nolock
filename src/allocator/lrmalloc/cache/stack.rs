@@ -13,13 +13,9 @@ impl<T, const N: usize> Stack<T, N> {
     }
 
     pub fn try_pop(&mut self) -> Option<*mut T> {
-        if self.used == 0 {
-            return None;
-        }
+        let location = self.used.checked_sub(1)?;
 
-        let location = self.used - 1;
         self.used = location;
-
         Some(self.buffer[location])
     }
 
