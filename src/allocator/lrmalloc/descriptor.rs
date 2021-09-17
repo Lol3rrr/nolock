@@ -1,8 +1,11 @@
-mod anchor;
 use std::sync::atomic;
 
+mod anchor;
+pub use anchor::Anchor;
 use anchor::AtomicAnchor;
-pub use anchor::{Anchor, AnchorState};
+
+mod anchor_state;
+pub use anchor_state::AnchorState;
 
 #[derive(Debug)]
 pub struct Descriptor {

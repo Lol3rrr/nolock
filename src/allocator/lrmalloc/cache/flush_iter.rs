@@ -1,10 +1,15 @@
 use super::stack::Stack;
 
+/// A FlushIter allows you to iterate over all the Elements in a Stack by popping
+/// them from the Top until there are no more Elements left on the Stack. This
+/// is mostly used to Flush a given Cache when it is full and needs to be
+/// emptied.
 pub struct FlushIter<'stack, T, const N: usize> {
     stack: &'stack mut Stack<T, N>,
 }
 
 impl<'stack, T, const N: usize> FlushIter<'stack, T, N> {
+    /// Creates a new FlushIter for the given Stack
     pub fn new(stack: &'stack mut Stack<T, N>) -> Self {
         Self { stack }
     }

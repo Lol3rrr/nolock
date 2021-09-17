@@ -1,10 +1,15 @@
+/// A simple Fixed-Size Stack used for storing the Ptr's for a single SizeClass
+/// in the Cache for fast local access
 #[derive(Debug, Clone, Copy)]
 pub struct Stack<T, const N: usize> {
+    /// The Backing storage for the Stack
     buffer: [*mut T; N],
+    /// The Number of Entries currently in the Stack
     used: usize,
 }
 
 impl<T, const N: usize> Stack<T, N> {
+    /// Creates a new empty Stack
     pub const fn new() -> Self {
         Self {
             buffer: [std::ptr::null_mut(); N],
@@ -12,6 +17,8 @@ impl<T, const N: usize> Stack<T, N> {
         }
     }
 
+    /// Attempts to pop a single Element from the Top of the Stack,
+    /// returns None if the Stack is empty
     pub fn try_pop(&mut self) -> Option<*mut T> {
         let location = self.used.checked_sub(1)?;
 
@@ -19,6 +26,8 @@ impl<T, const N: usize> Stack<T, N> {
         Some(self.buffer[location])
     }
 
+    /// Attempts to push the Ptr onto the Stack,
+    /// returns an Error with the given Ptr if the Stack is full
     pub fn try_push(&mut self, ptr: *mut T) -> Result<(), *mut T> {
         if self.used >= N {
             return Err(ptr);
