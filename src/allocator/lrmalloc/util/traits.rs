@@ -5,8 +5,7 @@ where
     Self: GlobalAlloc,
 {
     fn allocate<T>(&self, layout: std::alloc::Layout) -> *mut T {
-        let ptr = unsafe { GlobalAlloc::alloc(self, layout) } as *mut T;
-        ptr
+        (unsafe { GlobalAlloc::alloc(self, layout) } as *mut T)
     }
 
     fn free<T>(&self, ptr: *mut T, layout: std::alloc::Layout) {

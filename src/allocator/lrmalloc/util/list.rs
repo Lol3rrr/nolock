@@ -80,7 +80,7 @@ impl<T> List<T> {
         let mut iter = self.node_iter().peekable();
 
         let mut latest = unsafe { &*self.head };
-        while let Some(_) = iter.peek() {
+        while iter.peek().is_some() {
             let ptr = iter
                 .next()
                 .expect("We just peeked on the Iterator and found an element so this must succeed");
@@ -102,7 +102,7 @@ impl<T> List<T> {
         }
     }
 
-    pub fn iter<'iter>(&'iter self) -> ListIter<'iter, T> {
+    pub fn iter(&self) -> ListIter<'_, T> {
         ListIter {
             node_iter: self.node_iter(),
             _marker: std::marker::PhantomData {},

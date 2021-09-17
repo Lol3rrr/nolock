@@ -43,7 +43,7 @@ impl Cache {
     }
 
     /// Creates the FlushIter for the given SizeClass
-    pub fn flush<'stack>(&'stack mut self, size_class: usize) -> FlushIter<'stack, u8, 32> {
+    pub fn flush(&mut self, size_class: usize) -> FlushIter<'_, u8, 32> {
         let stack = self.stacks.get_mut(size_class).unwrap();
         FlushIter::new(stack)
     }
