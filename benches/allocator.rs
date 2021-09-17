@@ -106,14 +106,18 @@ fn bench_alloc_dealloc<A>(b: &mut Bencher, allocator: &A, layout: Layout)
 where
     A: GlobalAlloc,
 {
+    const BATCH_SIZE: usize = 30;
+
     b.iter_custom(|iters| {
         let mut result = Duration::ZERO.clone();
 
-        for _ in 0..iters {
+        for _ in 0..(iters / BATCH_SIZE as u64) {
             let start = Instant::now();
 
-            let ptr = unsafe { allocator.alloc(layout) };
-            unsafe { allocator.dealloc(ptr, layout) };
+            for _ in 0..BATCH_SIZE {
+                let ptr = unsafe { allocator.alloc(layout) };
+                unsafe { allocator.dealloc(black_box(ptr), layout) };
+            }
 
             result += start.elapsed();
         }
@@ -126,17 +130,25 @@ fn bench_alloc<A>(b: &mut Bencher, allocator: &A, layout: Layout)
 where
     A: GlobalAlloc,
 {
+    const BATCH_SIZE: usize = 30;
+
     b.iter_custom(|iters| {
         let mut result = Duration::ZERO.clone();
 
-        for _ in 0..iters {
+        let mut tmp_buffer: [*mut u8; BATCH_SIZE] = [std::ptr::null_mut(); BATCH_SIZE];
+
+        for _ in 0..(iters / BATCH_SIZE as u64) {
             let start = Instant::now();
 
-            let ptr = unsafe { allocator.alloc(layout) };
+            for i in 0..BATCH_SIZE {
+                tmp_buffer[i] = unsafe { allocator.alloc(layout) };
+            }
 
             result += start.elapsed();
 
-            unsafe { allocator.dealloc(ptr, layout) };
+            for ptr in tmp_buffer.iter() {
+                unsafe { allocator.dealloc(*ptr, layout) };
+            }
         }
 
         result
@@ -147,15 +159,23 @@ fn bench_dealloc<A>(b: &mut Bencher, allocator: &A, layout: Layout)
 where
     A: GlobalAlloc,
 {
+    const BATCH_SIZE: usize = 30;
+
     b.iter_custom(|iters| {
         let mut result = Duration::ZERO.clone();
 
-        for _ in 0..iters {
-            let ptr = unsafe { allocator.alloc(layout) };
+        let mut tmp_buffer: [*mut u8; BATCH_SIZE] = [std::ptr::null_mut(); BATCH_SIZE];
+
+        for _ in 0..(iters / BATCH_SIZE as u64) {
+            for i in 0..BATCH_SIZE {
+                tmp_buffer[i] = unsafe { allocator.alloc(layout) };
+            }
 
             let start = Instant::now();
 
-            unsafe { allocator.dealloc(ptr, layout) };
+            for i in 0..BATCH_SIZE {
+                unsafe { allocator.dealloc(tmp_buffer[i], layout) };
+            }
 
             result += start.elapsed();
         }
