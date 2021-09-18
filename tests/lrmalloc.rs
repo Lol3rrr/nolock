@@ -9,3 +9,10 @@ fn large_alloc() {
 
     drop(test);
 }
+
+#[test]
+fn small_alloc() {
+    let test: Box<[u8; 128]> = Box::new([0; 128]);
+
+    drop(test);
+}
