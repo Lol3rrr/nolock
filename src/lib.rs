@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+#![deny(missing_docs, unsafe_op_in_unsafe_fn)]
 #![warn(rust_2018_idioms, missing_debug_implementations)]
 //! This crate provides a set of Lock-Free algorithms and Datastructures
 //!

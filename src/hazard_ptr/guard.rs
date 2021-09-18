@@ -106,6 +106,6 @@ impl<T> Guard<T> {
     /// # Safety
     /// You must make sure that the underlying Ptr is valid for the Type `O`
     pub unsafe fn convert<O>(self) -> Guard<O> {
-        std::mem::transmute(self)
+        unsafe { std::mem::transmute(self) }
     }
 }
