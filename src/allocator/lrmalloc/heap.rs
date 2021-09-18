@@ -3,46 +3,79 @@ use crate::allocator::lrmalloc::descriptor::Anchor;
 use super::{
     cache::Cache,
     descriptor::{AnchorState, Descriptor},
+    pagemap::PageMap,
     size_classes,
     util::traits::InternalAlloc,
-    PAGEMAP,
 };
 
-use std::{alloc::GlobalAlloc, sync::atomic};
+use std::{alloc::GlobalAlloc, fmt::Debug, sync::atomic};
 
 mod descriptors;
 mod stack;
 
+/// The Heap is responsible for actually managing the Superblocks as well as doing all the needed
+/// synchronization between the Threads when needed
 pub struct Heap {
+    /// This contains a List of parially used Superblocks for every SizeClasses of the Allocator
     partial: [stack::DescriptorCollection; size_classes::size_class_count()],
+    /// A Collection of old Descriptors that are ready to be used again for a new Superblock
     recycled_desc: descriptors::RecycleList,
 }
 
+impl Debug for Heap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // TODO
+        // Properly implement a Debug implementation
+        Ok(())
+    }
+}
+
 impl Heap {
-    pub fn new() -> Self {
+    /// Creates a new Instance of the Heap
+    pub const fn new() -> Self {
+        let partial: [stack::DescriptorCollection; size_classes::size_class_count()] = [
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+            stack::DescriptorCollection::new(),
+        ];
+
         Self {
-            partial: Default::default(),
+            partial,
             recycled_desc: descriptors::RecycleList::new(),
         }
     }
 
-    pub fn allocate_large(&self, layout: std::alloc::Layout) -> *mut u8 {
+    pub fn allocate_large(&self, layout: std::alloc::Layout, pagemap: &PageMap) -> *mut u8 {
         let desc_ptr = self.new_superblock::<_, 1>(layout.size(), None, &std::alloc::System);
 
-        PAGEMAP.register_descriptor(desc_ptr);
+        pagemap.register_descriptor(desc_ptr);
 
         let desc = unsafe { &*desc_ptr };
         desc.superblock_ptr()
     }
-    pub fn free_large(&self, ptr: *mut u8, layout: std::alloc::Layout) {
-        let desc_ptr = PAGEMAP.load_descriptor(ptr);
+    pub fn free_large(&self, ptr: *mut u8, layout: std::alloc::Layout, pagemap: &PageMap) {
+        let desc_ptr = pagemap.load_descriptor(ptr).expect("This should exist");
         let desc = unsafe { &*desc_ptr };
 
         self.free_superblock(layout.size(), 1, desc.superblock_ptr());
         self.retire_descriptor(desc_ptr);
     }
 
-    pub fn flush_cache(&self, cache: &mut Cache, size_class: usize) {
+    pub fn flush_cache(&self, cache: &mut Cache, size_class: usize, pagemap: &PageMap) {
         let mut flush_iter = cache.flush(size_class).peekable();
 
         loop {
@@ -52,7 +85,9 @@ impl Heap {
             };
             let mut tail = head;
 
-            let head_desc_ptr = PAGEMAP.load_descriptor(head);
+            let head_desc_ptr = pagemap
+                .load_descriptor(head)
+                .expect("This should also exist");
             let head_desc = unsafe { &*head_desc_ptr };
             let mut block_count = 1;
 
@@ -103,7 +138,7 @@ impl Heap {
                 let partial = self.partial.get(size_class).expect("");
                 partial.push(head_desc_ptr);
             } else if let AnchorState::Empty = new_anchor.state {
-                PAGEMAP.unregister_descriptor(head_desc_ptr);
+                pagemap.unregister_descriptor(head_desc_ptr);
 
                 self.free_superblock(
                     head_desc.block_size(),
@@ -114,12 +149,12 @@ impl Heap {
         }
     }
 
-    pub fn fill_cache(&self, cache: &mut Cache, size_class: usize) {
+    pub fn fill_cache(&self, cache: &mut Cache, size_class: usize, pagemap: &PageMap) {
         if self.fill_cache_from_partial(cache, size_class) {
             return;
         }
 
-        self.fill_cache_from_new(cache, size_class);
+        self.fill_cache_from_new(cache, size_class, pagemap);
     }
 
     fn fill_cache_from_partial(&self, cache: &mut Cache, size_class: usize) -> bool {
@@ -165,7 +200,7 @@ impl Heap {
         true
     }
 
-    fn fill_cache_from_new(&self, cache: &mut Cache, size_class: usize) {
+    fn fill_cache_from_new(&self, cache: &mut Cache, size_class: usize, pagemap: &PageMap) {
         const MAX_COUNT: usize = Cache::get_stack_size();
 
         let block_size = size_classes::get_block_size(size_class);
@@ -181,7 +216,7 @@ impl Heap {
             cache.add_block(size_class, block_ptr).expect("");
         }
 
-        PAGEMAP.register_descriptor(descriptor_ptr);
+        pagemap.register_descriptor(descriptor_ptr);
     }
 
     /// Allocates a new Superblock and creates the corresponding Descriptor
@@ -236,6 +271,7 @@ impl Heap {
 
 impl Drop for Heap {
     fn drop(&mut self) {
-        dbg!("Dropped");
+        // TODO
+        // Implement Drop
     }
 }

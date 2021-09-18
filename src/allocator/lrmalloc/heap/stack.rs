@@ -31,7 +31,7 @@ pub struct DescriptorCollection {
 }
 
 impl DescriptorCollection {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             head: atomic::AtomicPtr::new(std::ptr::null_mut()),
         }

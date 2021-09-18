@@ -1,4 +1,4 @@
-use std::sync::atomic;
+use std::{ops::RangeInclusive, sync::atomic};
 
 mod anchor;
 pub use anchor::Anchor;
@@ -7,28 +7,43 @@ use anchor::AtomicAnchor;
 mod anchor_state;
 pub use anchor_state::AnchorState;
 
+/// A Descriptor stores all the needed information about any single Superblock
 #[derive(Debug)]
 pub struct Descriptor {
+    /// The Anchor to describe the current State of the Superblock
     anchor: AtomicAnchor,
+    /// The Pointer to the start of the Superblock
     super_block: *mut u8,
+    /// The Size of each block in the Superblock, this is needed to calculate
+    /// the Address for any given Block-Index in the Superblock
     block_size: usize,
+    /// The Maximum number of blocks contained in the Superblock
     max_count: usize,
+    /// The Size-Class of this Superblock, this is only set if the superblock
+    /// is allocated for a given SizeClass
     size_class: Option<usize>,
+    /// The Range of addresses that belong to this Superblock
+    ptr_range: RangeInclusive<usize>,
 }
 
 impl Descriptor {
+    /// Creates a new Descriptor based of the given Data
     pub fn new(
         block_size: usize,
         max_count: usize,
         size_class: Option<usize>,
         super_block: *mut u8,
     ) -> Self {
+        let lower_bound = super_block as usize;
+        let upper_bound = lower_bound + (block_size - 1) * max_count;
+
         Self {
             anchor: AtomicAnchor::new(Anchor::new(max_count as u32)),
             super_block,
             block_size,
             max_count,
             size_class,
+            ptr_range: (lower_bound..=upper_bound),
         }
     }
 
@@ -48,14 +63,13 @@ impl Descriptor {
         self.anchor.load(atomic::Ordering::Acquire)
     }
 
+    /// Checks if the given Ptr is contained in the Superblock
     pub fn contains(&self, ptr: *mut u8) -> bool {
         let ptr_value = ptr as usize;
-        let lower_bound = self.super_block as usize;
-        let upper_bound = lower_bound + (self.block_size - 1) * self.max_count;
-
-        lower_bound <= ptr_value && ptr_value <= upper_bound
+        self.ptr_range.contains(&ptr_value)
     }
 
+    /// Calculates the index of the Block that belongs to the given Ptr
     pub fn calc_index(&self, ptr: *mut u8) -> u32 {
         let starting_point = self.super_block as usize;
         let offset = (ptr as usize) - starting_point;
@@ -63,6 +77,7 @@ impl Descriptor {
         (offset / self.block_size) as u32
     }
 
+    /// Updates the Anchor with the given new Anchor using an atomic CAS
     pub fn update_anchor(
         &self,
         current: Anchor,

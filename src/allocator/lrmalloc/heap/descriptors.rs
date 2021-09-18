@@ -7,7 +7,7 @@ pub struct RecycleList {
 }
 
 impl RecycleList {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             list: util::list::List::new(atomic::AtomicPtr::new(std::ptr::null_mut())),
         }

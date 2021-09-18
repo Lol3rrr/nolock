@@ -1,18 +1,18 @@
+use std::alloc::{GlobalAlloc, Layout};
+
 use nolock::allocator::lrmalloc;
 
-#[global_allocator]
-static ALLOCATOR: lrmalloc::Allocator = lrmalloc::Allocator::new();
-
 #[test]
-fn large_alloc() {
-    let test: Box<[u8; 20000]> = Box::new([0; 20000]);
+fn alloc_dealloc() {
+    let allocator = lrmalloc::Allocator::new();
 
-    drop(test);
-}
+    let layout = Layout::new::<usize>();
 
-#[test]
-fn small_alloc() {
-    let test: Box<[u8; 128]> = Box::new([0; 128]);
+    for _ in 0..30 {
+        let ptr = unsafe { allocator.alloc(layout) };
+        unsafe { allocator.dealloc(ptr, layout) };
+    }
 
-    drop(test);
+    let ptr = unsafe { allocator.alloc(layout) };
+    unsafe { allocator.dealloc(ptr, layout) };
 }

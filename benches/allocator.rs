@@ -16,9 +16,9 @@ pub mod lrmalloc {
 
         group.throughput(Throughput::Elements(1));
 
-        group.bench_function("alloc-dealloc 1", |b| {
-            let allocator = allocator::lrmalloc::Allocator::new();
+        let allocator = allocator::lrmalloc::Allocator::new();
 
+        group.bench_function("alloc-dealloc 1", |b| {
             let layout = std::alloc::Layout::new::<usize>();
 
             bench_alloc_dealloc(b, &allocator, layout);
@@ -30,9 +30,9 @@ pub mod lrmalloc {
 
         group.throughput(Throughput::Elements(1));
 
-        group.bench_function("alloc-1", |b| {
-            let allocator = allocator::lrmalloc::Allocator::new();
+        let allocator = allocator::lrmalloc::Allocator::new();
 
+        group.bench_function("alloc-1", |b| {
             let layout = std::alloc::Layout::new::<usize>();
 
             bench_alloc(b, &allocator, layout);
@@ -44,9 +44,9 @@ pub mod lrmalloc {
 
         group.throughput(Throughput::Elements(1));
 
-        group.bench_function("dealloc-1", |b| {
-            let allocator = allocator::lrmalloc::Allocator::new();
+        let allocator = allocator::lrmalloc::Allocator::new();
 
+        group.bench_function("dealloc-1", |b| {
             let layout = std::alloc::Layout::new::<usize>();
 
             bench_dealloc(b, &allocator, layout);
@@ -64,9 +64,9 @@ pub mod system_alloc {
 
         group.throughput(Throughput::Elements(1));
 
-        group.bench_function("alloc-dealloc 1", |b| {
-            let allocator = std::alloc::System;
+        let allocator = std::alloc::System;
 
+        group.bench_function("alloc-dealloc 1", |b| {
             let layout = std::alloc::Layout::new::<usize>();
 
             bench_alloc_dealloc(b, &allocator, layout);
@@ -78,9 +78,9 @@ pub mod system_alloc {
 
         group.throughput(Throughput::Elements(1));
 
-        group.bench_function("alloc-1", |b| {
-            let allocator = std::alloc::System;
+        let allocator = std::alloc::System;
 
+        group.bench_function("alloc-1", |b| {
             let layout = std::alloc::Layout::new::<usize>();
 
             bench_alloc(b, &allocator, layout);
@@ -92,9 +92,9 @@ pub mod system_alloc {
 
         group.throughput(Throughput::Elements(1));
 
-        group.bench_function("dealloc-1", |b| {
-            let allocator = std::alloc::System;
+        let allocator = std::alloc::System;
 
+        group.bench_function("dealloc-1", |b| {
             let layout = std::alloc::Layout::new::<usize>();
 
             bench_dealloc(b, &allocator, layout);

@@ -6,7 +6,7 @@ struct Node<T> {
 }
 
 impl<T> Node<T> {
-    pub fn new(data: T) -> Self {
+    pub const fn new(data: T) -> Self {
         Self {
             data,
             next: atomic::AtomicPtr::new(std::ptr::null_mut()),
@@ -58,19 +58,27 @@ impl<T> Iterator for NodeIter<T> {
 }
 
 pub struct List<T> {
-    head: *mut Node<T>,
+    head: Node<T>,
 }
 
 impl<T> List<T> {
-    pub fn new(initial_entry: T) -> Self {
+    pub const fn new(initial_entry: T) -> Self {
         let initial_node = Node::new(initial_entry);
-        let node_ptr = initial_node.alloc(&std::alloc::System);
 
-        Self { head: node_ptr }
+        Self { head: initial_node }
+    }
+
+    /// # Safety:
+    /// The Caller must ensure that the List is never moved while the given
+    /// Ptr is still in use
+    unsafe fn head_ptr(&self) -> *mut Node<T> {
+        let field_ref = &self.head;
+        field_ref as *const Node<T> as *mut Node<T>
     }
 
     fn node_iter(&self) -> NodeIter<T> {
-        NodeIter { current: self.head }
+        let head_ptr = unsafe { self.head_ptr() };
+        NodeIter { current: head_ptr }
     }
 
     pub fn append(&self, data: T) {
@@ -79,7 +87,7 @@ impl<T> List<T> {
 
         let mut iter = self.node_iter().peekable();
 
-        let mut latest = unsafe { &*self.head };
+        let mut latest = &self.head;
         while iter.peek().is_some() {
             let ptr = iter
                 .next()
@@ -114,7 +122,12 @@ unsafe impl<T> Sync for List<T> {}
 
 impl<T> Drop for List<T> {
     fn drop(&mut self) {
-        for node_ptr in self.node_iter() {
+        let mut iter = self.node_iter();
+        // Skip the first Element of the Iterator as that is the root instance
+        // which was not actually allocated
+        let _ = iter.next();
+
+        for node_ptr in iter {
             Node::dealloc(node_ptr, &std::alloc::System);
         }
     }

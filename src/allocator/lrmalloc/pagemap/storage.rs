@@ -1,4 +1,4 @@
-use std::sync::atomic;
+use std::{fmt::Debug, sync::atomic};
 
 use crate::allocator::lrmalloc::{descriptor::Descriptor, util::list::List};
 
@@ -7,7 +7,7 @@ pub struct Collection {
 }
 
 impl Collection {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             list: List::new(atomic::AtomicPtr::new(std::ptr::null_mut())),
         }
@@ -55,10 +55,6 @@ impl Collection {
     pub fn remove(&self, descriptor: *mut Descriptor) {
         for a_ptr in self.list.iter() {
             let desc_ptr = a_ptr.load(atomic::Ordering::Acquire);
-            if desc_ptr.is_null() {
-                continue;
-            }
-
             if desc_ptr == descriptor {
                 let _ = a_ptr.compare_exchange(
                     desc_ptr,
@@ -73,6 +69,25 @@ impl Collection {
 
 unsafe impl Sync for Collection {}
 
+impl Debug for Collection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+
+        for a_ptr in self.list.iter() {
+            let ptr = a_ptr.load(atomic::Ordering::SeqCst);
+            if ptr.is_null() {
+                write!(f, "{:p},", ptr)?;
+            } else {
+                let desc = unsafe { &*ptr };
+                write!(f, "{:?},", desc)?;
+            }
+        }
+
+        write!(f, "]")?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,5 +97,22 @@ mod tests {
         let collection = Collection::new();
 
         collection.insert(0x123 as *mut Descriptor);
+    }
+
+    #[test]
+    fn insert_get() {
+        let collection = Collection::new();
+
+        let desc_ptr = Box::into_raw(Box::new(Descriptor::new(
+            128,
+            4,
+            Some(1),
+            0x1000 as *mut u8,
+        )));
+
+        collection.insert(desc_ptr);
+
+        let result = collection.get(0x1000 as *mut u8);
+        assert_eq!(Some(desc_ptr), result);
     }
 }
