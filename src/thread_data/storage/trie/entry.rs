@@ -1,4 +1,5 @@
-use std::sync::atomic;
+use alloc::boxed::Box;
+use core::sync::atomic;
 
 use super::{CustomPtr, Level, PtrTarget};
 

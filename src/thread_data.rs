@@ -34,7 +34,7 @@
 //! ```
 
 mod id;
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 use id::Id;
 
@@ -59,15 +59,15 @@ pub trait StorageBackend<T> {
 /// A Storage-Container for Thread Local Data
 pub struct ThreadDataStorage<S, T> {
     storage: S,
-    _marker: std::marker::PhantomData<T>,
+    _marker: core::marker::PhantomData<T>,
 }
 
 impl<S, T> Debug for ThreadDataStorage<S, T>
 where
     S: StorageBackend<T>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Thread-Data<{}> ()", std::any::type_name::<T>())
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "Thread-Data<{}> ()", core::any::type_name::<T>())
     }
 }
 
@@ -96,7 +96,7 @@ impl<S, T> ThreadDataStorage<S, T> {
     pub const fn new_storage(storage: S) -> Self {
         Self {
             storage,
-            _marker: std::marker::PhantomData {},
+            _marker: core::marker::PhantomData {},
         }
     }
 }

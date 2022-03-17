@@ -1,4 +1,4 @@
-use std::{
+use core::{
     convert::TryInto,
     hash::{Hash, Hasher},
 };
@@ -6,14 +6,12 @@ use std::{
 struct IDHasher {
     result: u64,
 }
-impl std::hash::Hasher for IDHasher {
+impl core::hash::Hasher for IDHasher {
     fn write(&mut self, bytes: &[u8]) {
         if bytes.len() == 8 {
             self.result = u64::from_le_bytes(bytes.try_into().unwrap());
             return;
         }
-
-        println!("Bytes: {:?}", bytes);
     }
     fn write_u64(&mut self, i: u64) {
         self.result = i;

@@ -1,4 +1,4 @@
-use std::sync::atomic;
+use core::sync::atomic;
 
 use super::Level;
 
@@ -8,7 +8,7 @@ pub use target::*;
 #[derive(Debug)]
 pub struct CustomPtr<T> {
     ptr: atomic::AtomicPtr<()>,
-    _marker: std::marker::PhantomData<T>,
+    _marker: core::marker::PhantomData<T>,
 }
 
 impl<T> CustomPtr<T> {
@@ -17,7 +17,7 @@ impl<T> CustomPtr<T> {
 
         Self {
             ptr: atomic::AtomicPtr::new(n_ptr.into()),
-            _marker: std::marker::PhantomData::default(),
+            _marker: core::marker::PhantomData::default(),
         }
     }
 

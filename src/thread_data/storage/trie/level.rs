@@ -1,4 +1,5 @@
-use std::sync::atomic;
+use alloc::{boxed::Box, vec::Vec};
+use core::sync::atomic;
 
 use crate::thread_data::storage::trie::{Entry, PtrTarget};
 

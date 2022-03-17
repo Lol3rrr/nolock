@@ -1,4 +1,5 @@
-use std::{fmt::Debug, sync::atomic};
+use alloc::boxed::Box;
+use core::{fmt::Debug, sync::atomic};
 
 use crate::thread_data::StorageBackend;
 
@@ -12,7 +13,7 @@ impl<T> Debug for Entry<T>
 where
     T: Debug,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let next_ptr = self.next.load(atomic::Ordering::Acquire);
 
         if next_ptr.is_null() {
@@ -33,7 +34,7 @@ impl<T> Debug for List<T>
 where
     T: Debug,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let initial_entry_ptr = self.entries.load(atomic::Ordering::Acquire);
         if initial_entry_ptr.is_null() {
             return write!(f, "List ()");
@@ -49,7 +50,7 @@ impl<T> List<T> {
     /// Creates a new empty Instance
     pub const fn new() -> Self {
         Self {
-            entries: atomic::AtomicPtr::new(std::ptr::null_mut()),
+            entries: atomic::AtomicPtr::new(core::ptr::null_mut()),
         }
     }
 }
@@ -79,14 +80,14 @@ impl<T> StorageBackend<T> for List<T> {
         let new_entry_ptr = Box::into_raw(Box::new(Entry {
             id,
             data,
-            next: atomic::AtomicPtr::new(std::ptr::null_mut()),
+            next: atomic::AtomicPtr::new(core::ptr::null_mut()),
         }));
         let new_entry = unsafe { &*new_entry_ptr };
 
         let mut head_ptr = self.entries.load(atomic::Ordering::SeqCst);
         if head_ptr.is_null() {
             match self.entries.compare_exchange(
-                std::ptr::null_mut(),
+                core::ptr::null_mut(),
                 new_entry_ptr,
                 atomic::Ordering::SeqCst,
                 atomic::Ordering::SeqCst,
@@ -104,7 +105,7 @@ impl<T> StorageBackend<T> for List<T> {
 
             if next_ptr.is_null() {
                 match current.next.compare_exchange(
-                    std::ptr::null_mut(),
+                    core::ptr::null_mut(),
                     new_entry_ptr,
                     atomic::Ordering::SeqCst,
                     atomic::Ordering::SeqCst,

@@ -1,6 +1,7 @@
-mod level;
-use std::fmt::Debug;
+use alloc::boxed::Box;
+use core::fmt::Debug;
 
+mod level;
 use level::Level;
 
 mod entry;
@@ -21,7 +22,7 @@ impl<T> Debug for Trie<T>
 where
     T: Debug,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         // Safety:
         // This is save to do because we create the Pointer when creating the
         // Trie meaning it is always going to be a valid pointer to a Level.
@@ -35,7 +36,7 @@ where
 impl<T> Trie<T> {
     /// Creates a new Trie instance
     pub fn new() -> Self {
-        let initial_level = Level::new(0, 3, std::ptr::null());
+        let initial_level = Level::new(0, 3, core::ptr::null());
 
         Self {
             initial_ptr: Box::into_raw(initial_level),
