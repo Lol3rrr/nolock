@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 use super::Receiver;
 
@@ -45,7 +45,7 @@ impl<T> Iterator for OwnedIter<T> {
 }
 
 impl<T> Debug for OwnedIter<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Owned-Iter ()")
     }
 }

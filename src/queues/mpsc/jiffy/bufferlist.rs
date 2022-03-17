@@ -1,4 +1,5 @@
-use std::{fmt::Debug, sync::atomic};
+use alloc::{boxed::Box, vec::Vec};
+use core::{fmt::Debug, sync::atomic};
 
 use super::{
     node::{Node, NodeState},
@@ -34,7 +35,7 @@ impl<T> BufferList<T> {
 
         Box::new(Self {
             previous,
-            next: atomic::AtomicPtr::new(std::ptr::null_mut()),
+            next: atomic::AtomicPtr::new(core::ptr::null_mut()),
             buffer,
             head: 0,
             position_in_queue,
@@ -166,7 +167,7 @@ impl<T> BufferList<T> {
         // that we should now also update the Tail of the Queue pointer, as our
         // new Queue is now the latest Element
         match self.next.compare_exchange(
-            std::ptr::null_mut(),
+            core::ptr::null_mut(),
             next_buffer_ptr,
             atomic::Ordering::SeqCst,
             atomic::Ordering::Acquire,
@@ -234,7 +235,7 @@ impl<T> BufferList<T> {
 }
 
 impl<T> Debug for BufferList<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
             "BufferList ( position_in_queue = {}, head = {} )",

@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use core::fmt::Display;
 
 // Internal Storage
 //
@@ -42,7 +42,7 @@ impl From<QueueEntryData> for u64 {
     }
 }
 impl Display for QueueEntryData {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
             "(IsSafe: {}, Cycle: {}, Index: {})",

@@ -3,10 +3,8 @@
 use super::super::bounded;
 use crate::queues::DequeueError;
 
-use std::{
-    fmt::Debug,
-    sync::{atomic, Arc},
-};
+use alloc::{boxed::Box, sync::Arc};
+use core::{fmt::Debug, sync::atomic};
 
 /// The Node datastructure used for the unbounded Queue
 struct Node<T> {
@@ -39,7 +37,7 @@ impl<T> UnboundedSender<T> {
                 n.previous = previous;
                 // Reset the Next-Ptr to null as this will be the new Tail
                 n.next
-                    .store(std::ptr::null_mut(), atomic::Ordering::Release);
+                    .store(core::ptr::null_mut(), atomic::Ordering::Release);
                 n
             }
             // There was no Node waiting to be used again
@@ -49,7 +47,7 @@ impl<T> UnboundedSender<T> {
             Err(_) => Box::new(Node {
                 data: Some(data),
                 previous,
-                next: atomic::AtomicPtr::new(std::ptr::null_mut()),
+                next: atomic::AtomicPtr::new(core::ptr::null_mut()),
             }),
         }
     }
@@ -77,7 +75,7 @@ impl<T> UnboundedSender<T> {
 }
 
 impl<T> Debug for UnboundedSender<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "UnboundedSender ()")
     }
 }
@@ -161,7 +159,7 @@ impl<T> UnboundedReceiver<T> {
 }
 
 impl<T> Debug for UnboundedReceiver<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "UnboundedReceiver ()")
     }
 }
@@ -193,8 +191,8 @@ pub fn unbounded_basic_queue<T>() -> (UnboundedReceiver<T>, UnboundedSender<T>) 
     let (node_rx, node_tx) = bounded::queue(64);
     let dummy_node = Box::new(Node {
         data: None,
-        previous: std::ptr::null_mut(),
-        next: atomic::AtomicPtr::new(std::ptr::null_mut()),
+        previous: core::ptr::null_mut(),
+        next: atomic::AtomicPtr::new(core::ptr::null_mut()),
     });
     let dummy_ptr = Box::into_raw(dummy_node);
 

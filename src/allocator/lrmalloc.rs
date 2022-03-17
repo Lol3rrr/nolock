@@ -53,6 +53,9 @@ impl Allocator {
     }
 
     /// Allocates Memory for the given Layout using this allocator
+    ///
+    /// # Safety
+    /// The caller needs to ensure that the given Memory Layout is valid
     pub unsafe fn allocate(&self, layout: std::alloc::Layout) -> *mut u8 {
         let size_class = match size_classes::get_size_class_index(layout.size()) {
             Some(s) => s,
@@ -79,6 +82,10 @@ impl Allocator {
     }
 
     /// Deallocates the Memory for the given Ptr with the given Layout
+    ///
+    /// # Safety
+    /// The Caller needs to ensure that the given Ptr was given out by this allocator and the given
+    /// Layout matches the layout that was used when obtaining the Ptr
     pub unsafe fn deallocate(&self, ptr: *mut u8, layout: std::alloc::Layout) {
         let desc_ptr = match PAGEMAP.load_descriptor(ptr) {
             Some(ptr) => ptr,

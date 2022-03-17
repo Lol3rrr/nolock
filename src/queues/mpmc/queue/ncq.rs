@@ -1,4 +1,5 @@
-use std::sync::atomic;
+use alloc::vec::Vec;
+use core::sync::atomic;
 
 use super::UnderlyingQueue;
 

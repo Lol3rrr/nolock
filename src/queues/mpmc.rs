@@ -6,4 +6,6 @@
 mod queue;
 
 pub mod bounded;
+#[cfg(feature = "hazard_ptr")]
+#[doc(cfg(feature = "hazard_ptr"))]
 pub mod unbounded;

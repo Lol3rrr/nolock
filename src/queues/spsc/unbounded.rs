@@ -18,10 +18,8 @@
 
 mod d_spsc;
 
-use std::{
-    fmt::Debug,
-    sync::{atomic, Arc},
-};
+use alloc::sync::Arc;
+use core::{fmt::Debug, sync::atomic};
 
 use super::bounded;
 use crate::queues::{DequeueError, EnqueueError};
@@ -134,7 +132,7 @@ impl<T> UnboundedSender<T> {
 }
 
 impl<T> Debug for UnboundedSender<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "UnboundedSender ()")
     }
 }
@@ -248,7 +246,7 @@ impl<T> UnboundedReceiver<T> {
 }
 
 impl<T> Debug for UnboundedReceiver<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "UnboundedReceiver ()")
     }
 }

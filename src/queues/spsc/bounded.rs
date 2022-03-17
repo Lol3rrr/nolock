@@ -16,10 +16,8 @@
 //! # Reference:
 //! * [FastForward for Efficient Pipeline Parallelism - A Cache-Optimized Concurrent Lock-Free Queue](https://www.researchgate.net/publication/213894711_FastForward_for_Efficient_Pipeline_Parallelism_A_Cache-Optimized_Concurrent_Lock-Free_Queue)
 
-use std::{
-    fmt::Debug,
-    sync::{atomic, Arc},
-};
+use alloc::{sync::Arc, vec::Vec};
+use core::{fmt::Debug, sync::atomic};
 
 use crate::queues::{DequeueError, EnqueueError};
 
@@ -170,7 +168,7 @@ impl<T> BoundedSender<T> {
 }
 
 impl<T> Debug for BoundedSender<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "BoundedSender ()")
     }
 }
@@ -289,7 +287,7 @@ impl<T> BoundedReceiver<T> {
 }
 
 impl<T> Debug for BoundedReceiver<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "BoundedReceiver ()")
     }
 }

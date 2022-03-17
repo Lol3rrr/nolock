@@ -17,10 +17,8 @@
 //! # Reference:
 //! * [Jiffy: A Fast, Memory Efficient, Wait-Free Multi-Producers Single-Consumer Queue](https://arxiv.org/pdf/2010.14189.pdf)
 
-use std::{
-    fmt::Debug,
-    sync::{atomic, Arc},
-};
+use alloc::{boxed::Box, sync::Arc};
+use core::{fmt::Debug, sync::atomic};
 
 /// The Size of each Buffer in the "BufferList"
 const BUFFER_SIZE: usize = 1024;
@@ -196,7 +194,7 @@ impl<T> Sender<T> {
 }
 
 impl<T> Debug for Sender<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Sender ()")
     }
 }
@@ -267,7 +265,7 @@ impl<T> Receiver<T> {
             // is no more valid Previous-BufferList.
             // This is needed for the cleanup of the Queue after the fact
             let next = unsafe { &mut *self.head_of_queue };
-            next.previous = std::ptr::null();
+            next.previous = core::ptr::null();
         }
 
         true
@@ -515,7 +513,7 @@ unsafe impl<T> Send for Receiver<T> {}
 unsafe impl<T> Sync for Receiver<T> {}
 
 impl<T> Debug for Receiver<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Receiver ()")
     }
 }
@@ -541,7 +539,7 @@ impl<T> Drop for Receiver<T> {
 
 /// Creates a new empty Queue and returns their ([`Receiver`], [`Sender`])
 pub fn queue<T>() -> (Receiver<T>, Sender<T>) {
-    let initial_buffer = BufferList::boxed(std::ptr::null(), 1);
+    let initial_buffer = BufferList::boxed(core::ptr::null(), 1);
     let initial_ptr = Box::into_raw(initial_buffer);
 
     let tail = atomic::AtomicUsize::new(0);

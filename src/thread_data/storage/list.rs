@@ -47,7 +47,7 @@ where
 
 impl<T> List<T> {
     /// Creates a new empty Instance
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             entries: atomic::AtomicPtr::new(std::ptr::null_mut()),
         }

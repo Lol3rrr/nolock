@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 use super::Receiver;
 
@@ -30,7 +30,7 @@ impl<'queue, T> Iterator for RefIter<'queue, T> {
 }
 
 impl<'queue, T> Debug for RefIter<'queue, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Ref-Iter ()")
     }
 }

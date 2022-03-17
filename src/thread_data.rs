@@ -79,7 +79,7 @@ impl<T> ThreadDataStorage<storage::Trie<T>, T> {
 }
 impl<T> ThreadDataStorage<storage::List<T>, T> {
     /// Creates a new Instance using the [`List`](storage::List) StorageBackend
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self::new_storage(storage::List::new())
     }
 }
@@ -116,7 +116,7 @@ where
     /// new Data if it does not currently exist
     pub fn get_or<F>(&self, create: F) -> &T
     where
-        F: Fn() -> T,
+        F: FnOnce() -> T,
     {
         // First Attempt to load the Data
         let id = Id::new().as_u64();

@@ -34,6 +34,7 @@ mod global {
 
     use super::Domain;
 
+    // static ref GLOBAL: Domain = Domain::new(64);
     lazy_static! {
         static ref GLOBAL: Arc<Domain> = Arc::new(Domain::new(64));
     }

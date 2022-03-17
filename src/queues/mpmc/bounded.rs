@@ -35,7 +35,7 @@ pub mod ncq {
     //! assert_eq!(Ok(10), rx.try_dequeue());
     //! ```
 
-    use std::fmt::Debug;
+    use core::fmt::Debug;
 
     use crate::queues::{DequeueError, EnqueueError};
 
@@ -47,13 +47,13 @@ pub mod ncq {
     pub struct Sender<T>(queue::BoundedSender<T, queue::ncq::Queue>);
 
     impl<T> Debug for Receiver<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "NCQ-Receiver<{}>()", std::any::type_name::<T>())
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            write!(f, "NCQ-Receiver<{}>()", core::any::type_name::<T>())
         }
     }
     impl<T> Debug for Sender<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "NCQ-Sender<{}>()", std::any::type_name::<T>())
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            write!(f, "NCQ-Sender<{}>()", core::any::type_name::<T>())
         }
     }
 
@@ -183,7 +183,7 @@ pub mod scq {
     //! assert_eq!(Ok(10), rx.try_dequeue());
     //! ```
 
-    use std::fmt::Debug;
+    use core::fmt::Debug;
 
     use crate::queues::{DequeueError, EnqueueError};
 
@@ -195,13 +195,13 @@ pub mod scq {
     pub struct Sender<T>(queue::BoundedSender<T, queue::scq::Queue>);
 
     impl<T> Debug for Receiver<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "SCQ-Receiver<{}>()", std::any::type_name::<T>())
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            write!(f, "SCQ-Receiver<{}>()", core::any::type_name::<T>())
         }
     }
     impl<T> Debug for Sender<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "SCQ-Sender<{}>()", std::any::type_name::<T>())
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            write!(f, "SCQ-Sender<{}>()", core::any::type_name::<T>())
         }
     }
 

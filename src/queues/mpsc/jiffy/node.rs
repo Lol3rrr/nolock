@@ -1,4 +1,4 @@
-use std::{cell::UnsafeCell, fmt::Debug, sync::atomic};
+use core::{cell::UnsafeCell, fmt::Debug, sync::atomic};
 
 /// The possible States of a Node
 #[derive(Debug, PartialEq)]
@@ -107,7 +107,7 @@ impl<T> Default for Node<T> {
 }
 
 impl<T> Debug for Node<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
             "Node ( is_set = {} )",

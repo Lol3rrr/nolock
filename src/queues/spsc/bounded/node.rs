@@ -1,4 +1,4 @@
-use std::{cell::UnsafeCell, sync::atomic};
+use core::{cell::UnsafeCell, sync::atomic};
 
 /// A Node is a single Entry in the Buffer of the Queue
 pub struct Node<T> {
