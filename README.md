@@ -8,9 +8,15 @@ A collection of Lock-Free (sometimes also Wait-Free) algorithms and datastructur
 The Goal of this Crate is to provide a save, easy to use and fast implementation
 for a variety of different Lock-Free or Wait-Free datastructures.
 
+## no_std Support
+Rust's no_std is supported for parts of this crate, to use this you need to disable the default
+features of the Crate and can then enable the specific features you need. Currently supported are:
+* queues
+
 ## Feature-Flags
 Name | Default | Description
 --- | --- | ---
+std | true | Enables the std, which is needed for most of the other Features
 queues | true | Enables the different Queues implementation
 async | true | Enables async varients of different Datastructures
 thread_data | true | Enables the lockfree Thread-Local-Storage
