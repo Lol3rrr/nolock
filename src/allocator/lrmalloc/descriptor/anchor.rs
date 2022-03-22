@@ -20,6 +20,10 @@ impl Anchor {
             count: 0,
         }
     }
+
+    pub fn as_u64(self) -> u64 {
+        self.into()
+    }
 }
 
 impl From<u64> for Anchor {
@@ -127,7 +131,7 @@ mod tests {
                 avail: 0x400000ff,
                 count: 0x400000ff,
             }
-            .into(),
+            .as_u64(),
         );
         assert_eq!(
             0x6000007fc00000ff_u64,
@@ -136,7 +140,7 @@ mod tests {
                 avail: 0x400000ff,
                 count: 0x400000ff,
             }
-            .into(),
+            .as_u64(),
         );
         assert_eq!(
             0xa000007fc00000ff_u64,
@@ -145,7 +149,7 @@ mod tests {
                 avail: 0x400000ff,
                 count: 0x400000ff,
             }
-            .into(),
+            .as_u64(),
         );
     }
 }

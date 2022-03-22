@@ -15,7 +15,8 @@
 //! the Handle acts as a Guard, so it should be kept around for as long as you are accessing the
 //! Datastructure.
 //!
-//! https://github.com/rusnikola/lfsmr
+//! ## C-Implementation
+//! [github](https://github.com/rusnikola/lfsmr)
 
 use alloc::boxed::Box;
 use atomic::Atomic;
@@ -304,6 +305,7 @@ impl<'a> Handle<'a> {
     }
 }
 impl<'b> Drop for Handle<'b> {
+    // This is the leave function in the Paper
     fn drop(&mut self) {
         // TODO
         let slot = 0;
@@ -315,7 +317,7 @@ impl<'b> Drop for Handle<'b> {
             head = self.heads[slot].load(atomic::Ordering::SeqCst).into();
             current = head;
 
-            if head.hptr != self.hptr {
+            if current.hptr != self.hptr {
                 next = match unsafe { &*head.hptr }.meta {
                     NodeMeta::Others { next } => next,
                     _ => unreachable!(),
@@ -392,5 +394,65 @@ mod tests {
         for handle in handles {
             handle.join().unwrap();
         }
+    }
+}
+
+#[cfg(all(test, loom))]
+mod looom_tests {
+    extern crate std;
+
+    use alloc::vec::Vec;
+
+    // use std::sync::Arc;
+    use loom::sync::Arc;
+    use loom::thread;
+
+    use super::*;
+
+    fn box_dealloc_u8(ptr: *const ()) {
+        let _ = unsafe { Box::from_raw(ptr as *mut u8) };
+    }
+
+    #[test]
+    #[ignore = "Fails without any good error messsages"]
+    fn two_threads() {
+        loom::model(|| {
+            let instance = Arc::new(Hyaline::<1>::new(box_dealloc_u8));
+            let inst1 = instance.clone();
+            let inst2 = instance.clone();
+
+            {
+                let inst = inst1;
+
+                thread::spawn(move || {
+                    let mut handle = inst.enter();
+
+                    unsafe {
+                        handle.retire(Box::into_raw(Box::new(1)) as *const ());
+                    }
+                    unsafe {
+                        handle.retire(Box::into_raw(Box::new(1)) as *const ());
+                    }
+
+                    drop(handle);
+                });
+            }
+            {
+                let inst = inst2;
+
+                thread::spawn(move || {
+                    let mut handle = inst.enter();
+
+                    unsafe {
+                        handle.retire(Box::into_raw(Box::new(2)) as *const ());
+                    }
+                    unsafe {
+                        handle.retire(Box::into_raw(Box::new(2)) as *const ());
+                    }
+
+                    drop(handle);
+                });
+            }
+        });
     }
 }

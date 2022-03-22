@@ -25,6 +25,12 @@ impl From<AnchorState> for u64 {
     }
 }
 
+impl AnchorState {
+    pub fn as_u64(self) -> u64 {
+        self.into()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -37,8 +43,8 @@ mod tests {
     }
     #[test]
     fn anchor_state_to_u64() {
-        assert_eq!(0b00_u64, AnchorState::Empty.into());
-        assert_eq!(0b01_u64, AnchorState::Partial.into());
-        assert_eq!(0b10_u64, AnchorState::Full.into());
+        assert_eq!(0b00_u64, AnchorState::Empty.as_u64());
+        assert_eq!(0b01_u64, AnchorState::Partial.as_u64());
+        assert_eq!(0b10_u64, AnchorState::Full.as_u64());
     }
 }

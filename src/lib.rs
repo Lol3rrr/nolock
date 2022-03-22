@@ -9,6 +9,7 @@
 //! * `async`: Enables all the Async-Version of the Algorithms/Datastructures
 //! * `thread_data`: Enables the ThreadData Module
 //! * `hazard_ptr`: Enables the Hazard-Ptr implementation
+//! * `hyaline`: Enables the Hyaline implementation
 //! * `allocator`: Enables the Allocators
 //! * `full`: Enables all the Feature-Flags
 //!

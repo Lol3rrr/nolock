@@ -30,6 +30,10 @@ impl QueueEntryData {
     pub fn index(&self) -> u32 {
         (self.0 & 0xffffffff) as u32
     }
+
+    pub fn as_u64(self) -> u64 {
+        self.into()
+    }
 }
 impl From<u64> for QueueEntryData {
     fn from(data: u64) -> Self {
@@ -77,15 +81,15 @@ mod tests {
     fn queue_entry_to_value() {
         assert_eq!(
             0x8000000000000000u64,
-            QueueEntryData::new(true, 0, 0).into()
+            QueueEntryData::new(true, 0, 0).as_u64()
         );
         assert_eq!(
             0x8000001500000000u64,
-            QueueEntryData::new(true, 0x15, 0).into()
+            QueueEntryData::new(true, 0x15, 0).as_u64()
         );
         assert_eq!(
             0x8000001500000015u64,
-            QueueEntryData::new(true, 0x15, 0x15).into()
+            QueueEntryData::new(true, 0x15, 0x15).as_u64()
         );
     }
 }
