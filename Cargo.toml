@@ -18,14 +18,16 @@ std = []
 queues = []
 thread_data = ["std"]
 hazard_ptr = ["std", "queues", "lazy_static", "thread_data"]
+hyaline = ["atomic"]
 hash_trie = ["std","hazard_ptr"]
 allocator = ["std","lazy_static"]
 async = ["std","futures"]
-full = ["std", "queues", "allocator", "async", "hazard_ptr"]
+full = ["std", "queues", "allocator", "async", "hazard_ptr", "hyaline"]
 
 [dependencies]
 futures = { version = "0.3", optional = true, default_features = false }
 lazy_static = { version = "1.4", optional = true }
+atomic = { version = "0.5", optional = true }
 
 [target.'cfg(loom)'.dependencies]
 loom = "0.5"

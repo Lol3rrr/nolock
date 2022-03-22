@@ -6,6 +6,6 @@
 mod queue;
 
 pub mod bounded;
-#[cfg(feature = "hazard_ptr")]
-#[cfg_attr(docsrs, doc(cfg(feature = "hazard_ptr")))]
+#[cfg(feature = "hyaline")]
+#[cfg_attr(docsrs, doc(cfg(feature = "hyaline")))]
 pub mod unbounded;

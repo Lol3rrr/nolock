@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(missing_docs, unsafe_op_in_unsafe_fn)]
-#![warn(rust_2018_idioms, missing_debug_implementations)]
+#![warn(rust_2018_idioms)]
 //! This crate provides a set of Lock-Free algorithms and Datastructures
 //!
 //! # Feature-Flags
@@ -26,6 +26,9 @@ pub mod hash_trie;
 #[cfg(feature = "hazard_ptr")]
 #[cfg_attr(docsrs, doc(cfg(feature = "hazard_ptr")))]
 pub mod hazard_ptr;
+#[cfg(feature = "hyaline")]
+#[cfg_attr(docsrs, doc(cfg(feature = "hyaline")))]
+pub mod hyaline;
 #[cfg(feature = "queues")]
 #[cfg_attr(docsrs, doc(cfg(feature = "queues")))]
 pub mod queues;

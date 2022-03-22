@@ -12,9 +12,7 @@
 use crate::sync::atomic;
 use std::{fmt::Debug, sync::Arc};
 
-use crate::{hazard_ptr, queues::DequeueError};
-
-use self::queue::BoundedQueue;
+use crate::{hyaline, queues::DequeueError};
 
 mod queue;
 
@@ -25,14 +23,14 @@ pub struct Receiver<T> {
     head: atomic::AtomicPtr<queue::BoundedQueue<T>>,
     rx_count: Arc<atomic::AtomicU64>,
     tx_count: Arc<atomic::AtomicU64>,
-    hazard_domain: Arc<hazard_ptr::Domain>,
+    hyaline_instance: Arc<hyaline::Hyaline>,
 }
 /// The Sender Half of an unbounded LSCQ Queue
 pub struct Sender<T> {
     tail: atomic::AtomicPtr<queue::BoundedQueue<T>>,
     rx_count: Arc<atomic::AtomicU64>,
     tx_count: Arc<atomic::AtomicU64>,
-    hazard_domain: Arc<hazard_ptr::Domain>,
+    hyaline_instance: Arc<hyaline::Hyaline>,
 }
 
 impl<T> Debug for Receiver<T> {
@@ -46,6 +44,11 @@ impl<T> Debug for Sender<T> {
     }
 }
 
+fn free_fn<T>(ptr: *const ()) {
+    let boxed = unsafe { Box::from_raw(ptr as *mut queue::BoundedQueue<T>) };
+    drop(boxed);
+}
+
 /// Creates a new unbounded LSCQ Queue
 pub fn queue<T>() -> (Receiver<T>, Sender<T>) {
     let initial_buffer = Box::new(queue::new_queue(BUFFER_SIZE));
@@ -57,19 +60,19 @@ pub fn queue<T>() -> (Receiver<T>, Sender<T>) {
     let rx_count = Arc::new(atomic::AtomicU64::new(1));
     let tx_count = Arc::new(atomic::AtomicU64::new(1));
 
-    let hazard_domain = Arc::new(hazard_ptr::Domain::new(5));
+    let instance = Arc::new(hyaline::Hyaline::new(free_fn::<T>));
 
     let rx = Receiver {
         head,
         rx_count: rx_count.clone(),
         tx_count: tx_count.clone(),
-        hazard_domain: hazard_domain.clone(),
+        hyaline_instance: instance.clone(),
     };
     let tx = Sender {
         tail,
         rx_count,
         tx_count,
-        hazard_domain,
+        hyaline_instance: instance,
     };
 
     (rx, tx)
@@ -90,11 +93,11 @@ impl<T> Sender<T> {
     /// # drop(rx);
     /// ```
     pub fn enqueue(&self, mut data: T) -> Result<(), T> {
+        let handle = self.hyaline_instance.enter();
+
         loop {
-            let tail = self
-                .hazard_domain
-                .protect(&self.tail, atomic::Ordering::Acquire);
-            let tail_ptr = tail.raw() as *mut BoundedQueue<T>;
+            let tail_ptr = self.tail.load(atomic::Ordering::Acquire);
+            let tail = unsafe { &*tail_ptr };
 
             if self.is_closed() {
                 return Err(data);
@@ -138,6 +141,8 @@ impl<T> Sender<T> {
                         atomic::Ordering::AcqRel,
                         atomic::Ordering::Relaxed,
                     );
+
+                    drop(handle);
                     return Ok(());
                 }
                 Err(_) => {
@@ -189,15 +194,15 @@ impl<T> Receiver<T> {
     /// assert_eq!(Err(DequeueError::Empty), rx.try_dequeue());
     /// ```
     pub fn try_dequeue(&self) -> Result<T, DequeueError> {
+        let mut handle = self.hyaline_instance.enter();
+
         loop {
             if self.is_closed() {
                 return Err(DequeueError::Closed);
             }
 
-            let head = self
-                .hazard_domain
-                .protect(&self.head, atomic::Ordering::Acquire);
-            let head_ptr = head.raw() as *mut BoundedQueue<T>;
+            let head_ptr = self.head.load(atomic::Ordering::Acquire);
+            let head = unsafe { &*head_ptr };
 
             if let Ok(data) = head.dequeue() {
                 return Ok(data);
@@ -232,10 +237,7 @@ impl<T> Receiver<T> {
                 // accessible from a shared Reference/Pointer since we just
                 // performed a successful compare_exchange on it.
                 unsafe {
-                    self.hazard_domain.retire(head_ptr, |ptr| {
-                        let boxed = Box::from_raw(ptr);
-                        drop(boxed);
-                    })
+                    handle.retire(head_ptr as *const ());
                 };
             }
         }
@@ -266,6 +268,8 @@ impl<T> Receiver<T> {
 }
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
+        let mut handle = self.hyaline_instance.enter();
+
         self.rx_count.fetch_sub(1, atomic::Ordering::AcqRel);
 
         let mut current_ptr = self.head.load(atomic::Ordering::SeqCst);
@@ -280,10 +284,7 @@ impl<T> Drop for Receiver<T> {
             // that no other Thread could load the Pointers anymore and
             // therefore we can savely retire the entire List
             unsafe {
-                self.hazard_domain.retire(current_ptr, |ptr| {
-                    let boxed = Box::from_raw(ptr);
-                    drop(boxed);
-                })
+                handle.retire(current_ptr as *const ());
             };
 
             if next_ptr.is_null() {
@@ -293,7 +294,7 @@ impl<T> Drop for Receiver<T> {
             current = unsafe { &*current_ptr };
         }
 
-        self.hazard_domain.reclaim();
+        drop(handle);
     }
 }
 
