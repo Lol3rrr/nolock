@@ -25,6 +25,7 @@ criterion_group!(
     mpsc::std_concurrent_enqueue,
     mpmc::ncq_enqueue_dequeue,
     mpmc::scq_enqueue_dequeue,
+    mpmc::unbounded_enqueue_dequeue,
 );
 
 criterion_group!(
