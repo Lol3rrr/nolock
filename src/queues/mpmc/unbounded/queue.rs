@@ -1,8 +1,5 @@
-use std::{
-    cell::UnsafeCell,
-    mem::MaybeUninit,
-    sync::{atomic, Arc},
-};
+use crate::sync::atomic;
+use std::{cell::UnsafeCell, mem::MaybeUninit, sync::Arc};
 
 use crate::queues::{DequeueError, EnqueueError};
 

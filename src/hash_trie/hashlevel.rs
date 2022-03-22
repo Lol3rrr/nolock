@@ -1,4 +1,10 @@
-use std::{fmt::Debug, marker::PhantomData, mem::ManuallyDrop, sync::atomic};
+use crate::sync::atomic;
+use std::{
+    fmt::Debug,
+    marker::{PhantomData, PhantomPinned},
+    mem::ManuallyDrop,
+    sync::Arc,
+};
 
 use crate::hazard_ptr;
 
@@ -20,12 +26,18 @@ pub(crate) struct HashLevel<K, V, const B: u8> {
     pub previous: *const HashLevel<K, V, B>,
     /// All the buckets for the current one
     buckets: Vec<mptr::TargetPtr<K, V>>,
+    domain: Arc<hazard_ptr::Domain>,
+    _pin_marker: PhantomPinned,
     _marker: PhantomData<(K, V)>,
 }
 
 impl<K, V, const B: u8> HashLevel<K, V, B> {
     /// Creates a new HashLevel
-    pub fn new(previous: *const HashLevel<K, V, B>, level: usize) -> Box<Self> {
+    pub fn new(
+        previous: *const HashLevel<K, V, B>,
+        level: usize,
+        domain: Arc<hazard_ptr::Domain>,
+    ) -> Box<Self> {
         let bucket_count = 2usize.pow(B as u32);
         let buckets = Vec::with_capacity(bucket_count);
 
@@ -35,6 +47,8 @@ impl<K, V, const B: u8> HashLevel<K, V, B> {
             max_chain: 3,
             own: std::ptr::null(),
             buckets,
+            domain,
+            _pin_marker: PhantomPinned,
             _marker: PhantomData,
         });
 
@@ -52,10 +66,12 @@ impl<K, V, const B: u8> HashLevel<K, V, B> {
 
     /// Filters the given Hash according to the current Hash-Level
     fn calc_level_hash(&self, hash: u64) -> u64 {
+        debug_assert!(self.level < 64);
         let start = (B as usize) * self.level;
         let end = (B as usize) * (self.level + 1);
 
-        let mask = (u64::MAX << start) >> start;
+        let (raw_mask, _) = (u64::MAX.overflowing_shl(start as u32));
+        let mask = raw_mask >> start;
         (hash & mask) >> (64 - end)
     }
 
@@ -82,7 +98,7 @@ where
         r: hazard_ptr::Guard<Entry<K, V>>,
         chain: usize,
     ) {
-        let mut tmp_guard: hazard_ptr::Guard<Entry<K, V>> = hazard_ptr::empty_guard();
+        let mut tmp_guard: hazard_ptr::Guard<Entry<K, V>> = self.domain.empty_guard();
 
         // Load the Next-Element in the Chain and if it is Hashlevel
         if let Some((_, hash_ptr)) = r.other.load::<B>(&mut tmp_guard) {
@@ -91,7 +107,7 @@ where
             // to the new HashLevel as well as then inserting the Node `n`
             // into the new HashLevel
             if chain == self.max_chain {
-                let new_hash = HashLevel::new(self.own, self.level + 1);
+                let new_hash = HashLevel::new(self.own, self.level + 1, self.domain.clone());
                 let new_hash_ptr = Box::into_raw(new_hash);
 
                 let cas_ptr = mptr::mark_as_previous(hash_ptr as *const u8) as *mut Entry<K, V>;
@@ -107,7 +123,7 @@ where
                         let bucket_index = self.get_bucket_index(n.hash);
                         let bucket = self.buckets.get(bucket_index).unwrap();
 
-                        let mut bucket_guard = hazard_ptr::empty_guard();
+                        let mut bucket_guard = self.domain.empty_guard();
                         match bucket.load::<B>(&mut bucket_guard) {
                             None => {
                                 new_hash.adjust_chain_nodes(bucket_guard);
@@ -177,7 +193,7 @@ where
         let bucket_index = self.get_bucket_index(n.hash);
         let bucket = self.buckets.get(bucket_index).unwrap();
 
-        let mut bucket_guard = hazard_ptr::empty_guard();
+        let mut bucket_guard = self.domain.empty_guard();
 
         // If the Bucket Points to the current HashLevel, the bucket
         // is empty and we can simply CAS the new Node into the Bucket
@@ -220,7 +236,7 @@ where
     /// Starts the adjustment process for the given Node as well as starting
     /// the adjustment for all the Nodes in its Chain
     pub fn adjust_chain_nodes(&self, r: hazard_ptr::Guard<Entry<K, V>>) {
-        let mut tmp_guard = hazard_ptr::empty_guard();
+        let mut tmp_guard = self.domain.empty_guard();
         if let None = r.other.load::<B>(&mut tmp_guard) {
             self.adjust_chain_nodes(tmp_guard);
         }
@@ -238,9 +254,10 @@ where
             key,
             value,
             self.own as *mut Self,
+            self.domain.clone(),
         ));
 
-        let mut bucket_guard = hazard_ptr::empty_guard();
+        let mut bucket_guard = self.domain.empty_guard();
 
         // If the
         if let mptr::PtrType::HashLevel(bucket_ptr) = bucket.load_ptr(atomic::Ordering::Acquire) {
@@ -273,7 +290,7 @@ where
                     raw_new_entry.value,
                 )
             }
-            None => bucket_guard.insert_key_on_chain(hash, &self, new_entry, 1),
+            None => bucket_guard.insert_key_on_chain(hash, &self, new_entry, 1, &self.domain),
         }
     }
 
@@ -287,7 +304,7 @@ where
             "The Bucket should always exist as there Hash should never be bigger than 2^bits",
         );
 
-        let mut bucket_guard = hazard_ptr::empty_guard();
+        let mut bucket_guard = self.domain.empty_guard();
 
         if let mptr::PtrType::HashLevel(h_ptr) = bucket.load_ptr(atomic::Ordering::Acquire) {
             if h_ptr as *mut Self == self.own as *mut Self {
@@ -296,7 +313,7 @@ where
         }
 
         match bucket.load::<B>(&mut bucket_guard) {
-            None => match bucket_guard.get_chain(hash, &self, key, 1) {
+            None => match bucket_guard.get_chain(hash, &self, key, 1, &self.domain) {
                 Ok(v) => Some(v),
                 Err(found) if found => Some(RefValue {
                     guard: bucket_guard,
@@ -310,8 +327,8 @@ where
     fn invalidate_entry(&self, hash: u64, key: &K) {
         let bucket = self.get_bucket(hash).unwrap();
 
-        let mut current_guard = hazard_ptr::empty_guard();
-        let mut next_guard = hazard_ptr::empty_guard();
+        let mut current_guard = self.domain.empty_guard();
+        let mut next_guard = self.domain.empty_guard();
 
         match bucket.load::<B>(&mut current_guard) {
             Some((sub_lvl, sub_lvl_ptr)) => {
@@ -360,9 +377,12 @@ where
         }
 
         let retire_ptr = to_remove.raw() as *mut ();
-        hazard_ptr::retire(retire_ptr, |ptr| {
+        // TODO
+        /*
+        self.domain.retire(retire_ptr, |ptr| {
             Entry::retire(ptr as *mut Entry<K, V>);
         });
+        */
 
         return;
     }
@@ -370,8 +390,8 @@ where
     fn invisible_entry(&self, hash: u64, key: &K) {
         let bucket = self.get_bucket(hash).unwrap();
 
-        let mut current_guard = hazard_ptr::empty_guard();
-        let mut next_guard = hazard_ptr::empty_guard();
+        let mut current_guard = self.domain.empty_guard();
+        let mut next_guard = self.domain.empty_guard();
 
         match bucket.load::<B>(&mut current_guard) {
             Some((sub_lvl, sub_lvl_ptr)) => {
@@ -428,7 +448,7 @@ where
         let padding = String::from_utf8(vec![b' '; self.level + 1]).unwrap();
 
         writeln!(f, "{}Own: {:p}", padding, self.own)?;
-        let mut bucket_guard = hazard_ptr::empty_guard();
+        let mut bucket_guard = self.domain.empty_guard();
         for bucket in self.buckets.iter() {
             match bucket.load::<B>(&mut bucket_guard) {
                 None => {
@@ -452,7 +472,7 @@ where
 impl<K, V, const B: u8> Drop for HashLevel<K, V, B> {
     fn drop(&mut self) {
         for bucket in self.buckets.iter_mut() {
-            bucket.clean_up::<B>(self.own as *mut ());
+            // bucket.clean_up::<B>(&self.domain, self.own as *mut ());
         }
     }
 }
@@ -463,17 +483,19 @@ mod tests {
 
     #[test]
     fn hash_level_calc_hash() {
-        let hl_0 = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0);
+        let domain = Arc::new(hazard_ptr::Domain::new(16));
+        let hl_0 = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0, domain.clone());
 
         assert_eq!(0x01, hl_0.calc_level_hash(0x1234567890abcdef));
 
-        let hl_1 = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 1);
+        let hl_1 = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 1, domain.clone());
         assert_eq!(0x02, hl_1.calc_level_hash(0x1234567890abcdef));
     }
 
     #[test]
     fn hash_level_insert_get() {
-        let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0);
+        let domain = Arc::new(hazard_ptr::Domain::new(16));
+        let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0, domain.clone());
 
         let hash = 13;
         let key = 16;
@@ -484,7 +506,8 @@ mod tests {
     }
     #[test]
     fn hash_level_insert_get_collision() {
-        let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0);
+        let domain = Arc::new(hazard_ptr::Domain::new(16));
+        let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0, domain.clone());
 
         let hash = 13;
         let key = 16;
@@ -498,7 +521,8 @@ mod tests {
 
     #[test]
     fn hash_level_insert_collision_expand() {
-        let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0);
+        let domain = Arc::new(hazard_ptr::Domain::new(16));
+        let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0, domain.clone());
 
         hl.insert(0x1234567890abcdef, 13, 123); // First: 0x1 Second: 0x2
         hl.insert(0x1234567890abcdef, 14, 124); // First: 0x1 Second: 0x2
@@ -513,7 +537,8 @@ mod tests {
 
     #[test]
     fn insert_remove() {
-        let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0);
+        let domain = Arc::new(hazard_ptr::Domain::new(16));
+        let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0, domain.clone());
 
         hl.insert(0x1234567890abcdef, 13, 123);
         assert_eq!(true, hl.get(0x1234567890abcdef, &13).is_some());
@@ -523,7 +548,8 @@ mod tests {
     }
     #[test]
     fn insert_remove_chain() {
-        let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0);
+        let domain = Arc::new(hazard_ptr::Domain::new(16));
+        let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0, domain.clone());
 
         hl.insert(0x1234567890abcdef, 13, 123);
         hl.insert(0x1234567890abcdef, 14, 124);

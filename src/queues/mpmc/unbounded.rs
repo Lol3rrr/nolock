@@ -9,10 +9,8 @@
 //! assert_eq!(Ok(13), rx.try_dequeue());
 //! ```
 
-use std::{
-    fmt::Debug,
-    sync::{atomic, Arc},
-};
+use crate::sync::atomic;
+use std::{fmt::Debug, sync::Arc};
 
 use crate::{hazard_ptr, queues::DequeueError};
 

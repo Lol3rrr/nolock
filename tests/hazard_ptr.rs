@@ -5,6 +5,7 @@ use nolock::hazard_ptr;
 
 #[cfg(feature = "hazard_ptr")]
 #[test]
+#[cfg(not(loom))]
 fn protect_boxed() {
     use std::sync::atomic::AtomicPtr;
 

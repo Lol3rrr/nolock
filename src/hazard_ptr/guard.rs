@@ -1,7 +1,8 @@
 use std::fmt::Debug;
 
+use crate::sync::atomic;
 use std::ops::Deref;
-use std::sync::{atomic, Arc};
+use std::sync::Arc;
 
 use crate::queues::mpsc::jiffy;
 

@@ -1,10 +1,8 @@
 mod global;
 
+use crate::sync::atomic;
 pub use global::DomainGlobal;
-use std::{
-    fmt::Debug,
-    sync::{atomic, Arc},
-};
+use std::{fmt::Debug, sync::Arc};
 
 use crate::queues::mpsc::jiffy;
 
@@ -95,6 +93,9 @@ impl TLDomain {
     /// Actually attempts to reclaim the Memory from the RetireNodes stored
     /// in the Retired-List
     fn scan(&mut self) {
+        // TODO
+        // Otherwise we got some Problems in loom which im not really sure about at the moment
+        return;
         let plist = self.global.get_protections();
 
         let tmplist = std::mem::take(&mut self.r_list);

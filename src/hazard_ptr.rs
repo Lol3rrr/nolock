@@ -9,11 +9,8 @@
 // dropped, it should mark all of its entries to be reused by other Domains
 
 mod record;
-use std::{
-    cell::RefCell,
-    fmt::Debug,
-    sync::{atomic, Arc},
-};
+use crate::sync::atomic;
+use std::{cell::RefCell, fmt::Debug, sync::Arc};
 
 use record::Record;
 
@@ -209,7 +206,7 @@ impl Domain {
 mod tests {
     use super::*;
 
-    use std::sync::atomic;
+    use crate::sync::atomic;
 
     #[derive(Debug, Clone)]
     struct DropCheck {
@@ -271,5 +268,47 @@ mod tests {
 
         assert_eq!(1, drop_chk.drop_count());
         assert_eq!(1, second_drop_chk.drop_count());
+    }
+}
+
+#[cfg(loom)]
+mod loom_tests {
+    use super::*;
+
+    use loom::thread;
+    use std::sync::Arc;
+
+    #[test]
+    fn swap_remove() {
+        loom::model(|| {
+            let og_domain = Arc::new(Domain::new(0));
+
+            let initial_boxed = Box::new(13usize);
+            let shared_ptr = Arc::new(atomic::AtomicPtr::new(Box::into_raw(initial_boxed)));
+
+            {
+                let domain = og_domain.clone();
+                let shared = shared_ptr.clone();
+                thread::spawn(move || {
+                    let previous = shared.swap(core::ptr::null_mut(), atomic::Ordering::SeqCst);
+
+                    unsafe {
+                        domain.retire(previous, |ptr| {
+                            let _ = unsafe { Box::from_raw(ptr) };
+                        });
+                    }
+                });
+            }
+            {
+                let domain = og_domain.clone();
+                let shared = shared_ptr.clone();
+                thread::spawn(move || {
+                    let mut empty_guard: Guard<usize> = domain.empty_guard();
+                    empty_guard.protect(&shared_ptr, atomic::Ordering::SeqCst);
+                });
+            }
+
+            core::mem::forget(og_domain);
+        });
     }
 }

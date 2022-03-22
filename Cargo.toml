@@ -27,6 +27,9 @@ full = ["std", "queues", "allocator", "async", "hazard_ptr"]
 futures = { version = "0.3", optional = true, default_features = false }
 lazy_static = { version = "1.4", optional = true }
 
+[target.'cfg(loom)'.dependencies]
+loom = "0.5"
+
 [dev-dependencies]
 rand = { version = "0.8" }
 pprof = { version = "0.3", features = ["flamegraph"] }

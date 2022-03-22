@@ -32,3 +32,5 @@ pub mod queues;
 #[cfg(feature = "thread_data")]
 #[cfg_attr(docsrs, doc(cfg(feature = "thread_data")))]
 pub mod thread_data;
+
+pub(crate) mod sync;

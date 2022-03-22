@@ -1,4 +1,5 @@
-use std::{fmt::Debug, sync::atomic};
+use crate::sync::atomic;
+use std::fmt::Debug;
 
 /// A single Record in the List of Hazard-Pointer-Records
 pub struct Record<T> {

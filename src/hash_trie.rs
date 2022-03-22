@@ -9,57 +9,25 @@ use std::{
     fmt::Debug,
     hash::{BuildHasher, Hash, Hasher},
     marker::PhantomData,
+    sync::Arc,
 };
 
 mod entry;
 mod hashlevel;
 mod mptr;
+mod refvalue;
 use entry::Entry;
 use hashlevel::HashLevel;
 
+pub use refvalue::RefValue;
+
 use crate::hazard_ptr;
-
-/// TODO
-#[derive(Debug)]
-pub struct RefValue<K, V> {
-    guard: hazard_ptr::Guard<Entry<K, V>>,
-}
-
-impl<K, V> RefValue<K, V> {
-    /// TODO
-    pub fn value(&self) -> &V {
-        &self.guard.value
-    }
-}
-
-impl<K, V> AsRef<V> for RefValue<K, V> {
-    fn as_ref(&self) -> &V {
-        self.value()
-    }
-}
-
-impl<K, V> PartialEq for RefValue<K, V>
-where
-    V: PartialEq,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.value().eq(other.value())
-    }
-}
-
-impl<K, V> PartialEq<V> for RefValue<K, V>
-where
-    V: PartialEq,
-{
-    fn eq(&self, other: &V) -> bool {
-        self.value().eq(other)
-    }
-}
 
 /// A Concurrent and Lock-Free HashTrieMap
 pub struct HashTrieMap<K, V, H = RandomState> {
     initial_level: HashLevel<K, V, 4>,
     build_hasher: H,
+    hazard_domain: Arc<hazard_ptr::Domain>,
     _marker: PhantomData<H>,
 }
 
@@ -88,11 +56,13 @@ where
 {
     /// TODO
     pub fn with_build_hasher(build_hasher: H) -> Self {
-        let start_level = HashLevel::new(std::ptr::null(), 0);
+        let domain = Arc::new(hazard_ptr::Domain::new(32));
+        let start_level = HashLevel::new(std::ptr::null(), 0, domain.clone());
 
         Self {
             initial_level: *start_level,
             build_hasher,
+            hazard_domain: domain,
             _marker: PhantomData,
         }
     }
@@ -191,5 +161,56 @@ mod tests {
         assert_eq!(None, map.get(&"test".to_owned()));
 
         assert_eq!(first_value, 123);
+    }
+
+    #[test]
+    fn remove_nonexisting() {
+        let map: HashTrieMap<String, usize> = HashTrieMap::new();
+
+        map.remove(&"testing".to_owned());
+    }
+}
+
+#[cfg(loom)]
+mod loom_tests {
+    use super::*;
+
+    use loom::thread;
+    use std::sync::Arc;
+
+    #[test]
+    fn insert_remove() {
+        loom::model(|| {
+            let og_map: Arc<HashTrieMap<String, usize>> = Arc::new(HashTrieMap::new());
+
+            let map = og_map.clone();
+            thread::spawn(move || {
+                map.insert("test".to_owned(), 123);
+                let result = map.get(&"test".to_owned());
+                // assert_eq!(true, result.is_some());
+                let first_value = result.unwrap();
+                // assert_eq!(first_value, 123);
+
+                // map.remove(&"test".to_owned());
+
+                // assert_eq!(None, map.get(&"test".to_owned()));
+
+                // assert_eq!(first_value, 123);
+            });
+            let map = og_map.clone();
+            thread::spawn(move || {
+                // map.insert("test".to_owned(), 123);
+                // let result = map.get(&"test".to_owned());
+                // assert_eq!(true, result.is_some());
+                // let first_value = result.unwrap();
+                // assert_eq!(first_value, 123);
+
+                // map.remove(&"test".to_owned());
+
+                // assert_eq!(None, map.get(&"test".to_owned()));
+
+                // assert_eq!(first_value, 123);
+            });
+        });
     }
 }
