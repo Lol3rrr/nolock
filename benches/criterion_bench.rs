@@ -12,7 +12,8 @@ mod profiler;
 criterion_group!(
     maps,
     hash_trie::hash_trie_inserts,
-    hash_trie::std_map_inserts
+    hash_trie::std_map_inserts,
+    hash_trie::std_btree_inserts,
 );
 
 criterion_group!(

@@ -1,10 +1,8 @@
-#[cfg(features = "hash_trie")]
 pub use map::*;
-#[cfg(not(features = "hash_trie"))]
-pub use mock::*;
 
-#[cfg(features = "hash_trie")]
 mod map {
+    use std::collections::{BTreeMap, HashMap};
+
     use criterion::Criterion;
     use nolock::hash_trie::HashTrieMap;
     use rand::Rng;
@@ -25,6 +23,8 @@ mod map {
         let mut group = ctx.benchmark_group("hash-trie-batch-inserts");
 
         for size in [4, 8, 16, 32, 64] {
+            group.throughput(criterion::Throughput::Elements(size as u64));
+
             group.bench_function(size.to_string(), |b| {
                 b.iter_batched(
                     || generate_insert_data(size),
@@ -40,12 +40,45 @@ mod map {
         }
     }
 
-    pub fn std_map_inserts(ctx: &mut Criterion) {}
-}
+    pub fn std_map_inserts(ctx: &mut Criterion) {
+        let mut group = ctx.benchmark_group("hash-trie/stdmap-batch-inserts");
 
-mod mock {
-    use criterion::Criterion;
+        for size in [4, 8, 16, 32, 64] {
+            group.throughput(criterion::Throughput::Elements(size as u64));
 
-    pub fn hash_trie_inserts(ctx: &mut Criterion) {}
-    pub fn std_map_inserts(ctx: &mut Criterion) {}
+            group.bench_function(size.to_string(), |b| {
+                b.iter_batched(
+                    || generate_insert_data(size),
+                    |data| {
+                        let mut map = HashMap::new();
+                        for (k, v) in data {
+                            map.insert(k, v);
+                        }
+                    },
+                    criterion::BatchSize::SmallInput,
+                )
+            });
+        }
+    }
+
+    pub fn std_btree_inserts(ctx: &mut Criterion) {
+        let mut group = ctx.benchmark_group("hash-trie/stdbtree-batch-inserts");
+
+        for size in [4, 8, 16, 32, 64] {
+            group.throughput(criterion::Throughput::Elements(size as u64));
+
+            group.bench_function(size.to_string(), |b| {
+                b.iter_batched(
+                    || generate_insert_data(size),
+                    |data| {
+                        let mut map = BTreeMap::new();
+                        for (k, v) in data {
+                            map.insert(k, v);
+                        }
+                    },
+                    criterion::BatchSize::SmallInput,
+                )
+            });
+        }
+    }
 }
