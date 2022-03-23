@@ -18,18 +18,12 @@ Name | Default | Description
 --- | --- | ---
 std | true | Enables the std, which is needed for most of the other Features
 queues | true | Enables the different Queues implementation
+hash_trie | true | Enables the Hash-Trie-Map implementation
 async | true | Enables async varients of different Datastructures
 thread_data | true | Enables the lockfree Thread-Local-Storage
 hazard_ptr | true | Enables the Hazard-Pointer implementation
+hyaline | true | Enables the Hyaline implementation
 full | true | Enables all Feature-Flags
-
-## Experimental Feature-Flags
-These are Features that may still contain bugs or are not complete yet
-
-Name | Default | Description
---- | --- | ---
-hash_trie | true | Enables the Hash-Trie-Map implementation
-
 
 ## Development
 ### Benchmarking
