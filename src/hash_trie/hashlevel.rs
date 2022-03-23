@@ -81,9 +81,7 @@ impl<K, V, const B: u8> HashLevel<K, V, B> {
                 PtrType::Entry(ptr) => {
                     bucket.raw_store(self.own as *mut (), atomic::Ordering::SeqCst);
 
-                    // unsafe { handle.retire(ptr as *const ()) };
-                    // TODO
-                    // If this is a chain, we need to follow it as well
+                    Entry::clean_up::<B>(ptr as *mut Entry<K, V>, self.own as *mut (), handle);
                 }
                 PtrType::HashLevel(ptr) => {
                     if ptr == self.own as *mut () {
@@ -491,6 +489,19 @@ impl<K, V, const B: u8> Drop for HashLevel<K, V, B> {
     fn drop(&mut self) {
         for bucket in self.buckets.iter_mut() {
             // bucket.clean_up::<B>(&self.domain, self.own as *mut ());
+        }
+
+        for bucket in self.buckets.iter() {
+            match bucket.load_ptr(atomic::Ordering::SeqCst) {
+                PtrType::Entry(ptr) => {}
+                PtrType::HashLevel(level_ptr) => {
+                    if level_ptr == self.own as *mut () {
+                        continue;
+                    }
+
+                    let _ = unsafe { Box::from_raw(level_ptr as *mut Self) };
+                }
+            };
         }
     }
 }

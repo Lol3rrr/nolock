@@ -7,7 +7,7 @@ use crate::{
 };
 
 use super::{
-    mptr::{self, boxed_hashlevel, LoadResult},
+    mptr::{self, boxed_hashlevel, LoadResult, PtrType},
     RefValue,
 };
 
@@ -52,6 +52,31 @@ impl<K, V> Entry<K, V> {
 
     pub fn invalidate(&self, order: atomic::Ordering) {
         self.description.valid.store(false, order);
+    }
+
+    pub fn clean_up<const B: u8>(
+        ptr: *mut Self,
+        current_level: *mut (),
+        handle: &mut hyaline::Handle<'_>,
+    ) {
+        let current = unsafe { &*ptr };
+
+        match current.other.load_ptr(atomic::Ordering::SeqCst) {
+            PtrType::Entry(next_entry_ptr) => {
+                Self::clean_up::<B>(next_entry_ptr as *mut Self, current_level, handle);
+            }
+            PtrType::HashLevel(other_level_ptr) => {
+                if other_level_ptr != current_level {
+                    let mut boxed_sublevel =
+                        unsafe { Box::from_raw(other_level_ptr as *mut HashLevel<K, V, B>) };
+
+                    boxed_sublevel.cleanup_buckets(handle);
+                    drop(boxed_sublevel);
+                }
+            }
+        };
+
+        let _ = unsafe { Box::from_raw(ptr) };
     }
 }
 
