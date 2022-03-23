@@ -490,7 +490,7 @@ impl<K, V, const B: u8> Drop for HashLevel<K, V, B> {
     fn drop(&mut self) {
         for bucket in self.buckets.iter() {
             match bucket.load_ptr(atomic::Ordering::SeqCst) {
-                PtrType::Entry(ptr) => {}
+                PtrType::Entry(_) => {}
                 PtrType::HashLevel(level_ptr) => {
                     if level_ptr == self.own as *mut () {
                         continue;
@@ -510,8 +510,6 @@ mod tests {
     use crate::hash_trie::HashTrieMap;
 
     use super::*;
-
-    fn dummy_free(_: *const ()) {}
 
     #[test]
     fn hash_level_calc_hash() {

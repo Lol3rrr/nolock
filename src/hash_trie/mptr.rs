@@ -15,7 +15,6 @@ pub(crate) enum PtrType {
 pub(crate) enum LoadResult<'r, K, V, const B: u8> {
     Entry {
         entry: &'r Entry<K, V>,
-        ptr: *mut Entry<K, V>,
     },
     HashLevel {
         level: &'r HashLevel<K, V, B>,
@@ -50,7 +49,6 @@ impl<K, V> TargetPtr<K, V> {
 
             LoadResult::Entry {
                 entry: unsafe { &*ptr },
-                ptr,
             }
         } else {
             let ptr = to_actual_ptr(ptr as *const u8) as *const ();

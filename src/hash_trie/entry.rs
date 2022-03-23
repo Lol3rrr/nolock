@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use core::{fmt::Debug, mem::ManuallyDrop};
+use core::mem::ManuallyDrop;
 
 use crate::{
     hash_trie::{hashlevel::HashLevel, mptr::boxed_entry},
@@ -213,7 +213,7 @@ where
         if &self.key == key {
             return Ok(RefValue {
                 entry_ptr: self,
-                handle,
+                _handle: handle,
             });
         }
 
@@ -234,29 +234,5 @@ where
                 _ => Err(false),
             },
         }
-    }
-}
-
-impl<K, V> Debug for Entry<K, V>
-where
-    K: Debug,
-    V: Debug,
-{
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        /*
-        let mut other_guard: hazard_ptr::Guard<Entry<K, V>> = self.domain.empty_guard();
-        let other_ptr = match self.other.load::<0>(&mut other_guard) {
-            None => other_guard.raw() as *const u8,
-            Some((_, p)) => p as *const u8,
-        };
-
-        write!(
-            f,
-            "Entry ({:?}:{:?}) -> {:p}",
-            self.key, self.value, other_ptr
-        )?;
-        */
-
-        Ok(())
     }
 }

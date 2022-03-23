@@ -7,7 +7,7 @@ use super::entry::Entry;
 /// TODO
 pub struct RefValue<'a, K, V> {
     pub(crate) entry_ptr: *const Entry<K, V>,
-    pub(crate) handle: hyaline::Handle<'a>,
+    pub(crate) _handle: hyaline::Handle<'a>,
 }
 
 impl<'a, K, V> Debug for RefValue<'a, K, V>
