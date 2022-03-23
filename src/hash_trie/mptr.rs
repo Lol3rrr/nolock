@@ -1,8 +1,9 @@
-use crate::hazard_ptr;
 use crate::sync::atomic;
 
 use super::{Entry, HashLevel};
-use std::mem::ManuallyDrop;
+
+use alloc::boxed::Box;
+use core::mem::ManuallyDrop;
 
 pub(crate) struct TargetPtr<K, V>(atomic::AtomicPtr<Entry<K, V>>);
 
@@ -90,30 +91,6 @@ impl<K, V> TargetPtr<K, V> {
     ) -> Result<*mut Entry<K, V>, *mut Entry<K, V>> {
         let marked = mark_as_entry(new as *const u8) as *mut Entry<K, V>;
         self.0.compare_exchange(current, marked, success, failure)
-    }
-
-    pub fn clean_up<const B: u8>(&mut self, domain: &hazard_ptr::Domain, own_lvl_ptr: *mut ()) {
-        let ptr = self.0.load(atomic::Ordering::Acquire) as *const u8;
-        if is_entry(ptr) {
-            let ptr = to_actual_ptr(ptr);
-
-            unsafe {
-                domain.retire(ptr as *mut (), |ptr| {
-                    let boxed = unsafe { Box::from_raw(ptr as *mut Entry<K, V>) };
-                    //drop(boxed);
-                    core::mem::forget(boxed);
-                });
-            }
-        } else {
-            let ptr = to_actual_ptr(ptr);
-            if ptr as *mut () == own_lvl_ptr {
-                return;
-            }
-
-            let boxed = unsafe { Box::from_raw(ptr as *mut HashLevel<K, V, B>) };
-            // drop(boxed);
-            core::mem::forget(boxed);
-        }
     }
 }
 

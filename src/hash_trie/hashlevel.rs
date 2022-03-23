@@ -1,5 +1,5 @@
-use crate::{hash_trie::mptr::PtrType, hyaline, sync::atomic};
-use std::{
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
+use core::{
     fmt::Debug,
     marker::{PhantomData, PhantomPinned},
     mem::ManuallyDrop,
@@ -10,6 +10,7 @@ use super::{
     mptr::{self, boxed_entry, boxed_hashlevel, LoadResult},
     RefValue,
 };
+use crate::{hash_trie::mptr::PtrType, hyaline, sync::atomic};
 
 pub(crate) struct HashLevel<K, V, const B: u8> {
     /// The Level of the HashLevel, this is used to determine which bits should
@@ -37,7 +38,7 @@ impl<K, V, const B: u8> HashLevel<K, V, B> {
             level,
             previous,
             max_chain: 3,
-            own: std::ptr::null(),
+            own: core::ptr::null(),
             buckets,
             _pin_marker: PhantomPinned,
             _marker: PhantomData,
@@ -134,7 +135,7 @@ where
                                 new_hash.adjust_chain_nodes(entry);
                             }
                             _ => {
-                                println!("Expected Bucket to point to Entry");
+                                // println!("Expected Bucket to point to Entry");
                                 return;
                             }
                         };
@@ -144,7 +145,7 @@ where
                         return;
                     }
                     Err(_) => {
-                        println!("Failed CAS");
+                        // println!("Failed CAS");
                     }
                 };
             } else {
@@ -215,7 +216,7 @@ where
                         return;
                     }
                     Err(_) => {
-                        println!("Insert did not work");
+                        // println!("Insert did not work");
                     }
                 };
             }
@@ -459,7 +460,7 @@ where
     K: Debug,
     V: Debug,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let padding = String::from_utf8(vec![b' '; self.level + 1]).unwrap();
 
         writeln!(f, "{}Own: {:p}", padding, self.own)?;
@@ -487,10 +488,6 @@ where
 
 impl<K, V, const B: u8> Drop for HashLevel<K, V, B> {
     fn drop(&mut self) {
-        for bucket in self.buckets.iter_mut() {
-            // bucket.clean_up::<B>(&self.domain, self.own as *mut ());
-        }
-
         for bucket in self.buckets.iter() {
             match bucket.load_ptr(atomic::Ordering::SeqCst) {
                 PtrType::Entry(ptr) => {}
@@ -508,6 +505,8 @@ impl<K, V, const B: u8> Drop for HashLevel<K, V, B> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::hash_map::RandomState;
+
     use crate::hash_trie::HashTrieMap;
 
     use super::*;
@@ -526,7 +525,7 @@ mod tests {
 
     #[test]
     fn hash_level_insert_get() {
-        let instance = hyaline::Hyaline::<4>::new(HashTrieMap::<u64, u64>::free_func);
+        let instance = hyaline::Hyaline::<4>::new(HashTrieMap::<u64, u64, RandomState>::free_func);
         let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0);
 
         let hash = 13;
@@ -538,7 +537,7 @@ mod tests {
     }
     #[test]
     fn hash_level_insert_get_collision() {
-        let instance = hyaline::Hyaline::<4>::new(HashTrieMap::<u64, u64>::free_func);
+        let instance = hyaline::Hyaline::<4>::new(HashTrieMap::<u64, u64, RandomState>::free_func);
         let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0);
 
         let hash = 13;
@@ -553,7 +552,7 @@ mod tests {
 
     #[test]
     fn hash_level_insert_collision_expand() {
-        let instance = hyaline::Hyaline::<4>::new(HashTrieMap::<u64, u64>::free_func);
+        let instance = hyaline::Hyaline::<4>::new(HashTrieMap::<u64, u64, RandomState>::free_func);
         let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0);
 
         hl.insert(0x1234567890abcdef, 13, 123, &mut instance.enter()); // First: 0x1 Second: 0x2
@@ -581,7 +580,7 @@ mod tests {
 
     #[test]
     fn insert_remove() {
-        let instance = hyaline::Hyaline::<4>::new(HashTrieMap::<u64, u64>::free_func);
+        let instance = hyaline::Hyaline::<4>::new(HashTrieMap::<u64, u64, RandomState>::free_func);
         let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0);
 
         hl.insert(0x1234567890abcdef, 13, 123, &mut instance.enter());
@@ -598,7 +597,7 @@ mod tests {
     }
     #[test]
     fn insert_remove_chain() {
-        let instance = hyaline::Hyaline::<4>::new(HashTrieMap::<u64, u64>::free_func);
+        let instance = hyaline::Hyaline::<4>::new(HashTrieMap::<u64, u64, RandomState>::free_func);
         let hl = HashLevel::new(0 as *const HashLevel<u64, u64, 4>, 0);
 
         hl.insert(0x1234567890abcdef, 13, 123, &mut instance.enter());

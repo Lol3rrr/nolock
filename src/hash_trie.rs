@@ -4,12 +4,16 @@
 //! * [A Lock-Free Hash Trie Design for Concurrent Tabled Logic Programs](https://link.springer.com/content/pdf/10.1007/s10766-014-0346-1.pdf)
 //! * [Towards a Lock-Free, Fixed Size and Persistent Hash Map Design](https://repositorio.inesctec.pt/bitstream/123456789/6155/1/P-00N-B3Y.pdf)
 
-use std::{
-    collections::hash_map::RandomState,
+#[cfg(feature = "std")]
+use std::collections::hash_map::RandomState;
+
+use core::{
     fmt::Debug,
     hash::{BuildHasher, Hash, Hasher},
     marker::PhantomData,
 };
+
+use alloc::boxed::Box;
 
 mod entry;
 mod hashlevel;
@@ -23,13 +27,14 @@ pub use refvalue::RefValue;
 use crate::hyaline;
 
 /// A Concurrent and Lock-Free HashTrieMap
-pub struct HashTrieMap<K, V, H = RandomState> {
+pub struct HashTrieMap<K, V, H> {
     initial_level: Box<HashLevel<K, V, 4>>,
     build_hasher: H,
     instance: hyaline::Hyaline,
     _marker: PhantomData<H>,
 }
 
+#[cfg(feature = "std")]
 impl<K, V> HashTrieMap<K, V, RandomState> {
     /// Creates a new HashTrieMap
     pub fn new() -> Self {
@@ -37,6 +42,7 @@ impl<K, V> HashTrieMap<K, V, RandomState> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<K, V> Default for HashTrieMap<K, V, RandomState> {
     fn default() -> Self {
         Self::new()
@@ -44,7 +50,7 @@ impl<K, V> Default for HashTrieMap<K, V, RandomState> {
 }
 
 impl<K, V, H> Debug for HashTrieMap<K, V, H> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "HashTrieMap ()")
     }
 }
@@ -54,19 +60,17 @@ where
     H: BuildHasher,
 {
     fn free_func(ptr: *const ()) {
-        // println!("Free: {:p}", ptr);
-
         if mptr::is_entry(ptr as *const u8) {
             let ptr = mptr::to_actual_ptr(ptr as *const u8) as *mut Entry<K, V>;
             let _ = unsafe { Box::from_raw(ptr) };
         } else {
-            println!("Free Level");
+            // println!("Free Level");
         }
     }
 
     /// TODO
     pub fn with_build_hasher(build_hasher: H) -> Self {
-        let start_level = HashLevel::new(std::ptr::null(), 0);
+        let start_level = HashLevel::new(core::ptr::null(), 0);
 
         Self {
             initial_level: start_level,
@@ -129,7 +133,7 @@ mod tests {
 
     #[test]
     fn get_non_existing() {
-        let map: HashTrieMap<String, usize> = HashTrieMap::new();
+        let map: HashTrieMap<String, usize, RandomState> = HashTrieMap::new();
 
         assert_eq!(None, map.get(&"test".to_owned()));
     }
@@ -166,7 +170,7 @@ mod tests {
 
     #[test]
     fn insert_remove() {
-        let map: HashTrieMap<String, usize> = HashTrieMap::new();
+        let map: HashTrieMap<String, usize, RandomState> = HashTrieMap::new();
 
         map.insert("test".to_owned(), 123);
         let result = map.get(&"test".to_owned());
@@ -183,7 +187,7 @@ mod tests {
 
     #[test]
     fn remove_nonexisting() {
-        let map: HashTrieMap<String, usize> = HashTrieMap::new();
+        let map: HashTrieMap<String, usize, RandomState> = HashTrieMap::new();
 
         map.remove(&"testing".to_owned());
     }

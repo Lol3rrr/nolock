@@ -1,9 +1,10 @@
-use crate::{hyaline, sync::atomic};
-use std::{fmt::Debug, marker::PhantomData, mem::ManuallyDrop, sync::Arc};
+use alloc::boxed::Box;
+use core::{fmt::Debug, mem::ManuallyDrop};
 
 use crate::{
     hash_trie::{hashlevel::HashLevel, mptr::boxed_entry},
-    hazard_ptr,
+    hyaline,
+    sync::atomic,
 };
 
 use super::{
@@ -42,12 +43,6 @@ impl<K, V> Entry<K, V> {
                 valid: atomic::AtomicBool::new(true),
             },
         })
-    }
-
-    pub fn retire(ptr: *mut Self) {
-        let boxed = unsafe { Box::from_raw(ptr) };
-        //drop(boxed);
-        core::mem::forget(boxed);
     }
 
     pub fn invalidate(&self, order: atomic::Ordering) {
@@ -159,7 +154,7 @@ where
                             return;
                         }
                         Err(_) => {
-                            println!("HashLevel CAS failed");
+                            // println!("HashLevel CAS failed");
                         }
                     }
 
@@ -175,7 +170,7 @@ where
                         Ok(_) => return,
                         Err(_) => {
                             new_entry = boxed_entry(new_entry_ptr);
-                            println!("Didnt work");
+                            // println!("Didnt work");
                         }
                     };
                 }
@@ -229,7 +224,7 @@ where
                 }
 
                 // TODO
-                println!("Is new List");
+                // println!("Is new List");
                 Err(false)
             }
             LoadResult::Entry {
@@ -247,7 +242,7 @@ where
     K: Debug,
     V: Debug,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         /*
         let mut other_guard: hazard_ptr::Guard<Entry<K, V>> = self.domain.empty_guard();
         let other_ptr = match self.other.load::<0>(&mut other_guard) {

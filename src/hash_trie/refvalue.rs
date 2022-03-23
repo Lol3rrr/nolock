@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 use crate::hyaline;
 
@@ -6,7 +6,6 @@ use super::entry::Entry;
 
 /// TODO
 pub struct RefValue<'a, K, V> {
-    // pub(crate) guard: &Entry<K, V>,
     pub(crate) entry_ptr: *const Entry<K, V>,
     pub(crate) handle: hyaline::Handle<'a>,
 }
@@ -16,7 +15,7 @@ where
     K: Debug,
     V: Debug,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("RefValue").field(self.value()).finish()
     }
 }
