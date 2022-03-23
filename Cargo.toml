@@ -19,10 +19,10 @@ queues = []
 thread_data = ["std"]
 hazard_ptr = ["std", "queues", "lazy_static", "thread_data"]
 hyaline = ["atomic"]
-hash_trie = ["std","hazard_ptr"]
+hash_trie = ["std","hazard_ptr", "hyaline"]
 allocator = ["std","lazy_static"]
 async = ["std","futures"]
-full = ["std", "queues", "allocator", "async", "hazard_ptr", "hyaline"]
+full = ["std", "queues", "hash_trie", "allocator", "async", "hazard_ptr", "hyaline"]
 
 [dependencies]
 futures = { version = "0.3", optional = true, default_features = false }

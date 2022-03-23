@@ -1,27 +1,40 @@
-use crate::hazard_ptr;
+use std::fmt::Debug;
+
+use crate::hyaline;
 
 use super::entry::Entry;
 
 /// TODO
-#[derive(Debug)]
-pub struct RefValue<K, V> {
-    pub(crate) guard: hazard_ptr::Guard<Entry<K, V>>,
+pub struct RefValue<'a, K, V> {
+    // pub(crate) guard: &Entry<K, V>,
+    pub(crate) entry_ptr: *const Entry<K, V>,
+    pub(crate) handle: hyaline::Handle<'a>,
 }
 
-impl<K, V> RefValue<K, V> {
-    /// TODO
-    pub fn value(&self) -> &V {
-        &self.guard.value
+impl<'a, K, V> Debug for RefValue<'a, K, V>
+where
+    K: Debug,
+    V: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("RefValue").field(self.value()).finish()
     }
 }
 
-impl<K, V> AsRef<V> for RefValue<K, V> {
+impl<'a, K, V> RefValue<'a, K, V> {
+    /// TODO
+    pub fn value(&self) -> &V {
+        unsafe { &(*self.entry_ptr).value }
+    }
+}
+
+impl<'a, K, V> AsRef<V> for RefValue<'a, K, V> {
     fn as_ref(&self) -> &V {
         self.value()
     }
 }
 
-impl<K, V> PartialEq for RefValue<K, V>
+impl<'a, K, V> PartialEq for RefValue<'a, K, V>
 where
     V: PartialEq,
 {
@@ -30,7 +43,7 @@ where
     }
 }
 
-impl<K, V> PartialEq<V> for RefValue<K, V>
+impl<'a, K, V> PartialEq<V> for RefValue<'a, K, V>
 where
     V: PartialEq,
 {

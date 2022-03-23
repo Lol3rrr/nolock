@@ -9,7 +9,6 @@ use std::{
     fmt::Debug,
     hash::{BuildHasher, Hash, Hasher},
     marker::PhantomData,
-    sync::Arc,
 };
 
 mod entry;
@@ -21,13 +20,13 @@ use hashlevel::HashLevel;
 
 pub use refvalue::RefValue;
 
-use crate::hazard_ptr;
+use crate::hyaline;
 
 /// A Concurrent and Lock-Free HashTrieMap
 pub struct HashTrieMap<K, V, H = RandomState> {
-    initial_level: HashLevel<K, V, 4>,
+    initial_level: Box<HashLevel<K, V, 4>>,
     build_hasher: H,
-    hazard_domain: Arc<hazard_ptr::Domain>,
+    instance: hyaline::Hyaline,
     _marker: PhantomData<H>,
 }
 
@@ -54,15 +53,25 @@ impl<K, V, H> HashTrieMap<K, V, H>
 where
     H: BuildHasher,
 {
+    fn free_func(ptr: *const ()) {
+        // println!("Free: {:p}", ptr);
+
+        if mptr::is_entry(ptr as *const u8) {
+            let ptr = mptr::to_actual_ptr(ptr as *const u8) as *mut Entry<K, V>;
+            let _ = unsafe { Box::from_raw(ptr) };
+        } else {
+            println!("Free Level");
+        }
+    }
+
     /// TODO
     pub fn with_build_hasher(build_hasher: H) -> Self {
-        let domain = Arc::new(hazard_ptr::Domain::new(32));
-        let start_level = HashLevel::new(std::ptr::null(), 0, domain.clone());
+        let start_level = HashLevel::new(std::ptr::null(), 0);
 
         Self {
-            initial_level: *start_level,
+            initial_level: start_level,
             build_hasher,
-            hazard_domain: domain,
+            instance: hyaline::Hyaline::new(Self::free_func),
             _marker: PhantomData,
         }
     }
@@ -80,16 +89,17 @@ where
         key.hash(&mut hasher);
         let hash = hasher.finish();
 
-        self.initial_level.insert(hash, key, value);
+        let mut handle = self.instance.enter();
+        self.initial_level.insert(hash, key, value, &mut handle);
     }
 
     /// Clones out a value from the Hash-Trie-Map
-    pub fn get(&self, key: &K) -> Option<RefValue<K, V>> {
+    pub fn get(&self, key: &K) -> Option<RefValue<'_, K, V>> {
         let mut hasher = self.build_hasher.build_hasher();
         key.hash(&mut hasher);
         let hash = hasher.finish();
 
-        self.initial_level.get(hash, key)
+        self.initial_level.get(hash, key, self.instance.enter())
     }
 
     /// TODO
@@ -98,12 +108,20 @@ where
         key.hash(&mut hasher);
         let hash = hasher.finish();
 
-        self.initial_level.remove_entry(hash, key);
+        let mut handle = self.instance.enter();
+        self.initial_level.remove_entry(hash, key, &mut handle);
     }
 }
 
 unsafe impl<K, V, H> Sync for HashTrieMap<K, V, H> {}
 unsafe impl<K, V, H> Send for HashTrieMap<K, V, H> {}
+
+impl<K, V, H> Drop for HashTrieMap<K, V, H> {
+    fn drop(&mut self) {
+        self.initial_level
+            .cleanup_buckets(&mut self.instance.enter());
+    }
+}
 
 #[cfg(test)]
 mod tests {

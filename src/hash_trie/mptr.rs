@@ -11,6 +11,17 @@ pub(crate) enum PtrType {
     HashLevel(*mut ()),
 }
 
+pub(crate) enum LoadResult<'r, K, V, const B: u8> {
+    Entry {
+        entry: &'r Entry<K, V>,
+        ptr: *mut Entry<K, V>,
+    },
+    HashLevel {
+        level: &'r HashLevel<K, V, B>,
+        ptr: *mut HashLevel<K, V, B>,
+    },
+}
+
 impl<K, V> TargetPtr<K, V> {
     pub fn new_hashlevel<const B: u8>(ptr: *mut HashLevel<K, V, B>) -> Self {
         let marked = mark_as_previous(ptr as *const u8) as *mut Entry<K, V>;
@@ -30,20 +41,24 @@ impl<K, V> TargetPtr<K, V> {
         }
     }
 
-    pub fn load<const B: u8>(
-        &self,
-        tmp_guard: &mut hazard_ptr::Guard<Entry<K, V>>,
-    ) -> Option<(
-        ManuallyDrop<Box<HashLevel<K, V, B>>>,
-        *mut HashLevel<K, V, B>,
-    )> {
-        tmp_guard.protect(&self.0, atomic::Ordering::SeqCst);
-        if is_entry(tmp_guard.raw() as *const u8) {
-            None
+    pub fn load<const B: u8>(&self) -> LoadResult<'_, K, V, B> {
+        let ptr = self.0.load(atomic::Ordering::SeqCst);
+        if is_entry(ptr as *const u8) {
+            let ptr = to_actual_ptr(ptr as *const u8) as *const ();
+            let ptr = ptr as *mut Entry<K, V>;
+
+            LoadResult::Entry {
+                entry: unsafe { &*ptr },
+                ptr,
+            }
         } else {
-            let ptr = to_actual_ptr(tmp_guard.raw() as *const u8) as *const ();
+            let ptr = to_actual_ptr(ptr as *const u8) as *const ();
             let ptr = ptr as *mut HashLevel<K, V, B>;
-            Some((ManuallyDrop::new(unsafe { Box::from_raw(ptr) }), ptr))
+
+            LoadResult::HashLevel {
+                level: unsafe { &*ptr },
+                ptr,
+            }
         }
     }
 
