@@ -1,4 +1,5 @@
-use std::{fmt::Debug, future::Future, sync::Arc, task::Poll};
+use alloc::sync::Arc;
+use core::{fmt::Debug, future::Future, task::Poll};
 
 use futures::task::AtomicWaker;
 
@@ -51,7 +52,7 @@ impl<T> AsyncUnboundedSender<T> {
 }
 
 impl<T> Debug for AsyncUnboundedSender<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Async-Unbounded-Sender ()")
     }
 }
@@ -80,7 +81,7 @@ impl<T> AsyncUnboundedReceiver<T> {
 }
 
 impl<T> Debug for AsyncUnboundedReceiver<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Async-Unbounded-Receiver ()")
     }
 }
@@ -89,9 +90,9 @@ impl<'queue, T> Future for DequeueFuture<'queue, T> {
     type Output = Result<T, DequeueError>;
 
     fn poll(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
+        mut self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
         match self.queue.try_dequeue() {
             Ok(d) => Poll::Ready(Ok(d)),
             Err(e) => match e {
@@ -106,7 +107,7 @@ impl<'queue, T> Future for DequeueFuture<'queue, T> {
 }
 
 impl<'queue, T> Debug for DequeueFuture<'queue, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Dequeue-Future ()")
     }
 }

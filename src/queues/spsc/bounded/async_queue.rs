@@ -1,4 +1,5 @@
-use std::{fmt::Debug, future::Future, sync::Arc, task::Poll};
+use alloc::sync::Arc;
+use core::{fmt::Debug, future::Future, task::Poll};
 
 use futures::task::AtomicWaker;
 
@@ -96,7 +97,7 @@ impl<T> AsyncBoundedSender<T> {
 }
 
 impl<T> Debug for AsyncBoundedSender<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Async-Bounded-Sender ()")
     }
 }
@@ -143,7 +144,7 @@ impl<T> AsyncBoundedReceiver<T> {
 }
 
 impl<T> Debug for AsyncBoundedReceiver<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Async-Bounded-Receiver ()")
     }
 }
@@ -154,9 +155,9 @@ impl<'queue, T> Future for EnqueueFuture<'queue, T> {
     type Output = Result<(), (T, EnqueueError)>;
 
     fn poll(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
+        mut self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Self::Output> {
         let data = match self.data.take() {
             Some(d) => d,
             None => return Poll::Ready(Ok(())),
@@ -181,7 +182,7 @@ impl<'queue, T> Future for EnqueueFuture<'queue, T> {
 }
 
 impl<'queue, T> Debug for EnqueueFuture<'queue, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Enqueue-Future ()")
     }
 }
@@ -192,8 +193,8 @@ impl<'queue, T> Future for DequeueFuture<'queue, T> {
     type Output = Result<T, DequeueError>;
 
     fn poll(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        mut self: core::pin::Pin<&mut Self>,
+        cx: &mut core::task::Context<'_>,
     ) -> Poll<Self::Output> {
         match self.queue.try_dequeue() {
             Ok(d) => {
@@ -212,7 +213,7 @@ impl<'queue, T> Future for DequeueFuture<'queue, T> {
 }
 
 impl<'queue, T> Debug for DequeueFuture<'queue, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Dequeue-Future ()")
     }
 }
