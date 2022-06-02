@@ -667,6 +667,6 @@ mod tests {
         assert_eq!(Some(13), iter.next());
         assert_eq!(None, iter.next());
 
-        assert_eq!(true, rx.is_closed());
+        assert!(rx.is_closed());
     }
 }

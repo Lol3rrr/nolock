@@ -63,9 +63,9 @@ mod tests {
 
     #[test]
     fn queue_entry_is_safe() {
-        assert_eq!(true, QueueEntryData::from(0x8000000000000000).is_safe());
-        assert_eq!(true, QueueEntryData::from(0xd000000000000000).is_safe());
-        assert_eq!(false, QueueEntryData::from(0x4000000000000000).is_safe());
+        assert!(QueueEntryData::from(0x8000000000000000).is_safe());
+        assert!(QueueEntryData::from(0xd000000000000000).is_safe());
+        assert!(!QueueEntryData::from(0x4000000000000000).is_safe());
     }
     #[test]
     fn queue_entry_cycle() {

@@ -14,6 +14,9 @@ use std::{fmt::Debug, sync::Arc};
 
 use crate::{hyaline, queues::DequeueError};
 
+mod async_queue;
+pub use async_queue::{async_queue, AsyncReceiver, AsyncSender};
+
 mod queue;
 
 const BUFFER_SIZE: usize = 128;
@@ -357,19 +360,19 @@ mod tests {
     fn receiver_is_closed() {
         let (rx, tx) = queue::<u64>();
 
-        assert_eq!(false, rx.is_closed());
+        assert!(!rx.is_closed());
 
         drop(tx);
-        assert_eq!(true, rx.is_closed());
+        assert!(rx.is_closed());
     }
     #[test]
     fn sender_is_closed() {
         let (rx, tx) = queue::<u64>();
 
-        assert_eq!(false, tx.is_closed());
+        assert!(!tx.is_closed());
 
         drop(rx);
-        assert_eq!(true, tx.is_closed());
+        assert!(tx.is_closed());
     }
 
     #[test]

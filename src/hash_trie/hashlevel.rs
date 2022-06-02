@@ -62,6 +62,7 @@ impl<K, V, const B: u8> HashLevel<K, V, B> {
         let start = (B as usize) * self.level;
         let end = (B as usize) * (self.level + 1);
 
+        // Clear the High bits of the Mask
         let mask = u64::MAX.wrapping_shl(start as u32) >> start;
         (hash & mask) >> (64 - end)
     }

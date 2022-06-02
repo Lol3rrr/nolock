@@ -251,9 +251,9 @@ mod tests {
 
     #[test]
     fn folding_success() {
-        let tail_ptr = atomic::AtomicPtr::new(0 as *mut BufferList<u32>);
+        let tail_ptr = atomic::AtomicPtr::new(std::ptr::null_mut());
 
-        let first_list = BufferList::boxed(0 as *const BufferList<u32>, 0);
+        let first_list = BufferList::boxed(std::ptr::null_mut(), 0);
         let first_list_ptr = Box::into_raw(first_list);
         let first_list = unsafe { &*first_list_ptr };
 
@@ -283,9 +283,9 @@ mod tests {
 
     #[test]
     fn folding_failure() {
-        let tail_ptr = atomic::AtomicPtr::new(0 as *mut BufferList<u32>);
+        let tail_ptr = atomic::AtomicPtr::new(std::ptr::null_mut());
 
-        let first_list = BufferList::boxed(0 as *const BufferList<u32>, 0);
+        let first_list = BufferList::boxed(std::ptr::null_mut(), 0);
         let first_list_ptr = Box::into_raw(first_list);
         let first_list = unsafe { Box::from_raw(first_list_ptr) };
 
@@ -294,7 +294,7 @@ mod tests {
         let second_list_ptr = first_list.next.load(atomic::Ordering::SeqCst);
         let mut second_list = ManuallyDrop::new(unsafe { Box::from_raw(second_list_ptr) });
 
-        assert_eq!(true, second_list.fold().is_none());
+        assert!(second_list.fold().is_none());
 
         assert_eq!(
             second_list_ptr,
@@ -307,7 +307,7 @@ mod tests {
 
     #[test]
     fn scan() {
-        let raw_list = BufferList::boxed(0 as *const BufferList<u32>, 0);
+        let raw_list = BufferList::boxed(std::ptr::null_mut(), 0);
         let raw_list_ptr = Box::into_raw(raw_list);
 
         let buffer_list = unsafe { &*raw_list_ptr };

@@ -38,9 +38,9 @@ impl From<u128> for HeadPtr {
         }
     }
 }
-impl Into<u128> for HeadPtr {
-    fn into(self) -> u128 {
-        ((self.href as u128) << 64) | (self.hptr as u128)
+impl From<HeadPtr> for u128 {
+    fn from(ptr: HeadPtr) -> u128 {
+        ((ptr.href as u128) << 64) | (ptr.hptr as u128)
     }
 }
 
@@ -61,7 +61,11 @@ enum NodeMeta {
     Others { next: *const Node },
 }
 
-/// TODO
+/// The Hyaline instance which stores all the needed information to manage the reclaimation Process
+/// for a given Datastructure
+///
+/// # Usage
+/// In most cases it is best to store this alongside your main Datastructure or in Wrapper
 pub struct Hyaline<const K: usize = 4> {
     adjs: i64,
     heads: [Atomic<u128>; K],
@@ -69,7 +73,8 @@ pub struct Hyaline<const K: usize = 4> {
     free_fn: fn(*const ()),
 }
 
-/// TODO
+/// The Handle acts like a Guard that Protects the entire Datastructure as long as it is held and
+/// should therefore be kept around for as long as you perform an Operation on the Datastructure
 pub struct Handle<'a> {
     hptr: *const Node,
     adjs: i64,
@@ -78,10 +83,14 @@ pub struct Handle<'a> {
     free_fn: fn(*const ()),
 }
 
+// This is currently only allowed because we need it to create the Array in `Hyaline::new` which
+// only works with this as a const, but we never actually use it for anything else
+#[allow(clippy::declare_interior_mutable_const)]
 const SINGLE_SLOT: Atomic<u128> = Atomic::new(0);
 
 impl<const K: usize> Hyaline<K> {
-    /// TODO
+    /// Creates a new Instance which will actually free the underlying Data using the provided
+    /// `free_fn`
     pub fn new(free_fn: fn(*const ())) -> Self {
         Self {
             adjs: (u64::MAX / K as u64).wrapping_add(1) as i64,
@@ -91,7 +100,9 @@ impl<const K: usize> Hyaline<K> {
         }
     }
 
-    /// TODO
+    /// This should be called at the start of every operation. As long as the returned handle is
+    /// not dropped, the Data that can be accessed from this point going forward in the
+    /// Datastructure is safe to access from this Thread.
     pub fn enter(&self) -> Handle<'_> {
         // TODO
         let slot = 0;

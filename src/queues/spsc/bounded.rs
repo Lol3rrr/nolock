@@ -411,25 +411,25 @@ mod tests {
     fn is_empty() {
         let (mut rx, mut tx) = queue::<usize>(3);
 
-        assert_eq!(true, rx.is_empty());
+        assert!(rx.is_empty());
 
         tx.try_enqueue(13).unwrap();
-        assert_eq!(false, rx.is_empty());
+        assert!(!rx.is_empty());
 
         rx.try_dequeue().unwrap();
-        assert_eq!(true, rx.is_empty());
+        assert!(rx.is_empty());
     }
 
     #[test]
     fn is_full() {
         let (mut rx, mut tx) = queue::<usize>(1);
 
-        assert_eq!(false, tx.is_full());
+        assert!(!tx.is_full());
 
         tx.try_enqueue(13).unwrap();
-        assert_eq!(true, tx.is_full());
+        assert!(tx.is_full());
 
         rx.try_dequeue().unwrap();
-        assert_eq!(false, tx.is_full());
+        assert!(!tx.is_full());
     }
 }

@@ -309,18 +309,18 @@ mod tests {
     fn receiver_closed() {
         let (rx, tx) = queue_ncq::<u64>(10);
 
-        assert_eq!(false, rx.is_closed());
+        assert!(!rx.is_closed());
 
         drop(tx);
-        assert_eq!(true, rx.is_closed());
+        assert!(rx.is_closed());
     }
     #[test]
     fn sending_closed() {
         let (rx, tx) = queue_ncq::<u64>(10);
 
-        assert_eq!(false, tx.is_closed());
+        assert!(!tx.is_closed());
 
         drop(rx);
-        assert_eq!(true, tx.is_closed());
+        assert!(tx.is_closed());
     }
 }

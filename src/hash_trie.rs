@@ -1,5 +1,31 @@
 //! A lock-free concurrent HashTrieMap
 //!
+//! # Example
+//! ```
+//! # use nolock::hash_trie::HashTrieMap;
+//! # use std::{collections::hash_map::RandomState, sync::Arc};
+//! let instance = Arc::new(HashTrieMap::<String, u64, RandomState>::new());
+//!
+//! let handles: Vec<_> = (0..6)
+//!     .map(|_| {
+//!         let instance = instance.clone();
+//!         std::thread::spawn(move || {
+//!             instance.insert("testing".into(), 123);
+//!             instance.get(&"testing".into());
+//!             instance.remove(&"testing".into());
+//!         })
+//!     })
+//!     .collect();
+//!
+//! for handle in handles {
+//!     handle.join().unwrap();
+//! }
+//! ```
+//!
+//! # Internals
+//! The Implementation is based on the two Papers listed in the Reference section and uses
+//! [hyaline](crate::hyaline) as its memory Reclaimation scheme
+//!
 //! # Reference:
 //! * [A Lock-Free Hash Trie Design for Concurrent Tabled Logic Programs](https://link.springer.com/content/pdf/10.1007/s10766-014-0346-1.pdf)
 //! * [Towards a Lock-Free, Fixed Size and Persistent Hash Map Design](https://repositorio.inesctec.pt/bitstream/123456789/6155/1/P-00N-B3Y.pdf)
@@ -144,7 +170,7 @@ mod tests {
 
         map.insert("test".to_owned(), 123);
         let result = map.get(&"test".to_owned());
-        assert_eq!(true, result.is_some());
+        assert!(result.is_some());
         assert_eq!(result.unwrap(), 123);
     }
 
@@ -154,13 +180,13 @@ mod tests {
 
         map.insert("test".to_owned(), 123);
         let result = map.get(&"test".to_owned());
-        assert_eq!(true, result.is_some());
+        assert!(result.is_some());
         let first_value = result.unwrap();
         assert_eq!(first_value, 123);
 
         map.insert("test".to_owned(), 234);
         let result = map.get(&"test".to_owned());
-        assert_eq!(true, result.is_some());
+        assert!(result.is_some());
         let second_value = result.unwrap();
         assert_eq!(second_value, 234);
 
@@ -174,7 +200,7 @@ mod tests {
 
         map.insert("test".to_owned(), 123);
         let result = map.get(&"test".to_owned());
-        assert_eq!(true, result.is_some());
+        assert!(result.is_some());
         let first_value = result.unwrap();
         assert_eq!(first_value, 123);
 
