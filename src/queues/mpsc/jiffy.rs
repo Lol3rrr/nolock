@@ -413,6 +413,11 @@ impl<T> Receiver<T> {
                     None => return Err(DequeueError::Empty),
                 };
 
+                // Seems that tmp_n can be empty, so return empty dequeue error.
+                if tmp_n.get_state().eq(&NodeState::Empty) {
+                    return Err(DequeueError::Empty);
+                }
+
                 // Actually load the Data from the Node
                 let data = tmp_n.load();
                 // Set the Node to being Handled to not accidentally load the
