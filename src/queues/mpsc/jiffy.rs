@@ -348,7 +348,10 @@ impl<T> Receiver<T> {
             // simply load the Data from it
             NodeState::Set => {
                 // Load the Data from the current Node
-                let data = n.load();
+                let data = n
+                    .load()
+                    .expect("Data should be loadable and node shoudl be Set");
+
                 // Advance the Head of the current Buffer to the next Node
                 current_queue.head += 1;
 
@@ -414,10 +417,9 @@ impl<T> Receiver<T> {
                 };
 
                 // Actually load the Data from the Node
-                let data = tmp_n.load();
-                // Set the Node to being Handled to not accidentally load the
-                // same Node twice
-                tmp_n.handled();
+                let data = tmp_n
+                    .load()
+                    .expect("Data should be loadable and node shoudl be Set");
 
                 Ok(data)
 

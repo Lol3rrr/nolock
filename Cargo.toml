@@ -22,7 +22,7 @@ hyaline = ["atomic"]
 hash_trie = ["hyaline"]
 allocator = ["std","lazy_static"]
 async = ["futures"]
-full = ["std", "queues", "hash_trie", "allocator", "async", "hazard_ptr", "hyaline"]
+full = ["std", "queues", "allocator", "thread_data", "hazard_ptr"]
 
 [dependencies]
 futures = { version = "0.3", optional = true, default_features = false }

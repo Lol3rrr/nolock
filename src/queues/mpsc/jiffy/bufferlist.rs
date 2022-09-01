@@ -97,7 +97,7 @@ impl<T> BufferList<T> {
         loop {
             let state = tmp_n.get_state();
             if NodeState::Set == state {
-                break;
+                return (tmp_head_of_queue_ptr, Some(tmp_head));
             }
 
             tmp_head += 1;
@@ -133,15 +133,14 @@ impl<T> BufferList<T> {
                     flag_buffer_all_handled = true;
                     flag_move_to_new_buffer = true;
                 }
-            } else {
-                tmp_n = {
-                    let n_ref = tmp_head_of_queue.buffer.get(tmp_head).unwrap();
-                    let n_ptr = n_ref as *const Node<T> as *mut Node<T>;
-                    unsafe { &*n_ptr }
-                };
             }
+
+            tmp_n = {
+                let n_ref = tmp_head_of_queue.buffer.get(tmp_head).unwrap();
+                let n_ptr = n_ref as *const Node<T> as *mut Node<T>;
+                unsafe { &*n_ptr }
+            };
         }
-        (tmp_head_of_queue_ptr, Some(tmp_head))
     }
 
     /// This attempts to allocate a new BufferList and store it as the next-Ptr for

@@ -77,8 +77,12 @@ impl<T> Node<T> {
     }
 
     /// Attempts to load the Data from the Node itself, this can only be
-    /// done once
-    pub fn load(&self) -> T {
+    /// done once, and automatically sets the node to being handled
+    pub fn load(&self) -> Option<T> {
+        if self.get_state() != NodeState::Set {
+            return None;
+        }
+
         // # Safety:
         // This is save to do, because the value is only ever consumed by a
         // single Consumer and after the value has been set, no more procuder
@@ -90,13 +94,12 @@ impl<T> Node<T> {
         // check that the Node is marked as Set. After this Node was visited it
         // will never again be visited and therefore this wont be called again
         // with a now empty data entry.
-        mut_data.take().unwrap()
-    }
+        let data = mut_data.take().unwrap();
 
-    /// Sets the State of the Node to `Handled`
-    pub fn handled(&self) {
         self.is_set
             .store(NodeState::Handled.to_u8(), atomic::Ordering::Release);
+
+        Some(data)
     }
 }
 
