@@ -1,7 +1,7 @@
 use core::{cell::UnsafeCell, fmt::Debug, sync::atomic};
 
 /// The possible States of a Node
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum NodeState {
     /// The Node is either empty or currently being written to
     Empty,
@@ -129,7 +129,16 @@ mod tests {
         let node: Node<u64> = Default::default();
 
         node.store(15);
-        assert_eq!(15, node.load());
+        assert_eq!(Some(15), node.load());
+    }
+
+    #[test]
+    fn node_store_load_multiple() {
+        let node: Node<u64> = Default::default();
+
+        node.store(15);
+        assert_eq!(Some(15), node.load());
+        assert_eq!(None, node.load());
     }
 
     #[test]
