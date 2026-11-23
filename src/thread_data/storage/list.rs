@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use core::{fmt::Debug, sync::atomic};
 
-use crate::thread_data::StorageBackend;
+use crate::thread_data::{StorageBackend, cleanup::Cleanup};
 
 struct Entry<T> {
     id: u64,
@@ -76,7 +76,7 @@ impl<T> StorageBackend<T> for List<T> {
             current = unsafe { &*next_ptr };
         }
     }
-    fn insert(&self, id: u64, data: T) -> &T {
+    fn insert(&self, id: u64, data: T, cleanup: &mut Vec<Cleanup>) -> &T {
         let new_entry_ptr = Box::into_raw(Box::new(Entry {
             id,
             data,
@@ -167,14 +167,18 @@ mod tests {
     fn insert_get() {
         let storage = List::<usize>::new();
 
-        storage.insert(13, 123);
+        let mut cleanup = Vec::new();
+
+        storage.insert(13, 123, &mut cleanup);
         assert_eq!(Some(&123), storage.get(13));
     }
     #[test]
     fn insert_get_other() {
         let storage = List::<usize>::new();
 
-        storage.insert(13, 123);
+        let mut cleanup = Vec::new();
+
+        storage.insert(13, 123, &mut cleanup);
         assert_eq!(None, storage.get(14));
     }
 }

@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use core::fmt::Debug;
+use core::{fmt::Debug, ptr::NonNull};
 
 mod level;
 use level::Level;
@@ -10,12 +10,12 @@ use entry::Entry;
 mod ptr;
 use ptr::{CustomPtr, PtrTarget};
 
-use crate::thread_data::StorageBackend;
+use crate::thread_data::{StorageBackend, cleanup::Cleanup};
 
 /// A Lock-Free Trie that can be used as the StorageBackend for Thread-Local-Data
 pub struct Trie<T> {
     // The Pointer to the first Level
-    initial_ptr: *mut Level<T>,
+    initial_ptr: NonNull<Level<T>>,
 }
 
 impl<T> Debug for Trie<T>
@@ -28,7 +28,7 @@ where
         // Trie meaning it is always going to be a valid pointer to a Level.
         // The Memory being pointed to is also still valid because we only
         // deallocate it once the Trie is dropped.
-        let initial_level = unsafe { &*self.initial_ptr };
+        let initial_level = unsafe { self.initial_ptr.as_ref() };
         write!(f, "Trie ({:?})", initial_level)
     }
 }
@@ -39,12 +39,12 @@ impl<T> Trie<T> {
         let initial_level = Level::new(0, 3, core::ptr::null());
 
         Self {
-            initial_ptr: Box::into_raw(initial_level),
+            initial_ptr: Box::into_non_null(initial_level),
         }
     }
 }
 
-impl<T> StorageBackend<T> for Trie<T> {
+impl<T> StorageBackend<T> for Trie<T> where T: 'static {
     fn get(&self, id: u64) -> Option<&T> {
         // This simply "forwards" the get to the first initial Level of the
         // Trie
@@ -54,21 +54,27 @@ impl<T> StorageBackend<T> for Trie<T> {
         // Trie meaning it is always going to be a valid pointer to a Level.
         // The Memory being pointed to is also still valid because we only
         // deallocate it once the Trie is dropped.
-        let level = unsafe { &*self.initial_ptr };
+        let level = unsafe { self.initial_ptr.as_ref() };
         level.get(id)
     }
 
-    fn insert(&self, id: u64, data: T) -> &T {
+    fn insert(&self, id: u64, data: T, cleanup: &mut Vec<Cleanup>) -> &T {
         // This simply "forwards" the insert to the first initial Level of the
         // Trie
+        
+        let mut data_ptr = Box::into_raw(Box::new(data));
+
+        cleanup.push(Cleanup::new(data_ptr, |ptr| {
+            drop(unsafe { Box::from_raw(ptr) });
+        }));
 
         // Safety:
         // This is save to do because we create the Pointer when creating the
         // Trie meaning it is always going to be a valid pointer to a Level.
         // The Memory being pointed to is also still valid because we only
         // deallocate it once the Trie is dropped.
-        let level = unsafe { &*self.initial_ptr };
-        level.insert(id, data)
+        let level = unsafe { self.initial_ptr.as_ref() };
+        level.insert(id, data_ptr)
     }
 }
 
@@ -80,7 +86,7 @@ impl<T> Default for Trie<T> {
 
 impl<T> Drop for Trie<T> {
     fn drop(&mut self) {
-        unsafe { Box::from_raw(self.initial_ptr) };
+        unsafe { drop(Box::from_non_null(self.initial_ptr)) };
     }
 }
 
@@ -105,7 +111,8 @@ mod tests {
     fn insert() {
         let trie = Trie::<usize>::new();
 
-        let value = trie.insert(123, 13);
+        let mut cleanup = Vec::new();
+        let value = trie.insert(123, 13, &mut cleanup);
         assert_eq!(13, *value);
     }
 
@@ -113,7 +120,8 @@ mod tests {
     fn insert_get() {
         let trie = Trie::<usize>::new();
 
-        let value = trie.insert(123, 13);
+        let mut cleanup = Vec::new();
+        let value = trie.insert(123, 13, &mut cleanup);
         assert_eq!(13, *value);
 
         let result = trie.get(123);
@@ -124,9 +132,11 @@ mod tests {
     fn insert_get_colliding() {
         let trie = Trie::<usize>::new();
 
-        assert_eq!(13, *trie.insert(0x1234, 13));
-        assert_eq!(14, *trie.insert(0x1334, 14));
-        assert_eq!(15, *trie.insert(0x1434, 15));
+        let mut cleanup = Vec::new();
+
+        assert_eq!(13, *trie.insert(0x1234, 13, &mut cleanup));
+        assert_eq!(14, *trie.insert(0x1334, 14, &mut cleanup));
+        assert_eq!(15, *trie.insert(0x1434, 15, &mut cleanup));
 
         assert_eq!(Some(&13), trie.get(0x1234));
         assert_eq!(Some(&14), trie.get(0x1334));

@@ -34,11 +34,17 @@
 //! ```
 
 mod id;
-use core::fmt::Debug;
+use core::{cell::RefCell, fmt::Debug};
 
 use id::Id;
 
 pub mod storage;
+
+mod cleanup;
+
+thread_local! {
+    static CLEANUP: RefCell<Vec<cleanup::Cleanup>> = const { RefCell::new(Vec::new()) };
+}
 
 /// The General Interface used by the [`ThreadDataStorage`] to interface with
 /// any sort of Datastructure used to actually store the Data for each
@@ -53,7 +59,7 @@ pub trait StorageBackend<T> {
     /// # Note
     /// This function will only be called with new ID's and should therefore
     /// never cause an ID collision in the underlying Storage
-    fn insert(&self, id: u64, data: T) -> &T;
+    fn insert(&self, id: u64, data: T, cleanup: &mut Vec<cleanup::Cleanup>) -> &T;
 }
 
 /// A Storage-Container for Thread Local Data
@@ -104,6 +110,7 @@ impl<S, T> ThreadDataStorage<S, T> {
 impl<S, T> ThreadDataStorage<S, T>
 where
     S: StorageBackend<T>,
+    T: 'static,
 {
     /// Attempts to load the stored Data for the current Thread
     pub fn get(&self) -> Option<&T> {
@@ -127,7 +134,10 @@ where
             // reference to it
             None => {
                 let data = create();
-                self.storage.insert(id, data)
+                CLEANUP.with(|c| {
+                    let mut c = c.borrow_mut();
+                    self.storage.insert(id, data, c.as_mut())
+                })
             }
         }
     }

@@ -11,19 +11,18 @@ const CLEAN_PTR_MASK: usize = usize::MAX - 1;
 
 impl<T> From<*mut ()> for PtrTarget<T> {
     fn from(raw_ptr: *mut ()) -> Self {
-        if (raw_ptr as usize & ENTRY_MASK) > 0 {
-            let ptr = (raw_ptr as usize & CLEAN_PTR_MASK) as *mut ();
-            PtrTarget::Entry(ptr as *mut Entry<T>)
+        if (raw_ptr.addr() & ENTRY_MASK) > 0 {
+            PtrTarget::Entry(raw_ptr.map_addr(|a| a & CLEAN_PTR_MASK).cast())
         } else {
-            PtrTarget::Level(raw_ptr as *mut Level<T>)
+            PtrTarget::Level(raw_ptr.cast())
         }
     }
 }
 impl<T> From<PtrTarget<T>> for *mut () {
     fn from(target: PtrTarget<T>) -> Self {
         match target {
-            PtrTarget::Entry(raw) => (raw as usize | ENTRY_MASK) as *mut (),
-            PtrTarget::Level(raw) => raw as *mut (),
+            PtrTarget::Entry(raw) => raw.map_addr(|a| a | ENTRY_MASK).cast(),
+            PtrTarget::Level(raw) => raw.cast(),
         }
     }
 }
@@ -34,13 +33,13 @@ mod tests {
 
     #[test]
     fn into_from_level() {
-        let input = PtrTarget::<usize>::Level(0x100 as *mut Level<usize>);
+        let input = PtrTarget::<usize>::Level(core::ptr::without_provenance_mut::<Level<usize>>(0x100));
         let raw_ptr: *mut () = input.into();
         assert_eq!(input, PtrTarget::from(raw_ptr));
     }
     #[test]
     fn into_from_entry() {
-        let input = PtrTarget::<usize>::Entry(0x100 as *mut Entry<usize>);
+        let input = PtrTarget::<usize>::Entry(core::ptr::without_provenance_mut::<Entry<usize>>(0x100));
         let raw_ptr: *mut () = input.into();
         assert_eq!(input, PtrTarget::from(raw_ptr));
     }

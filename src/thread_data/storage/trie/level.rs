@@ -1,5 +1,5 @@
 use alloc::{boxed::Box, vec::Vec};
-use core::sync::atomic;
+use core::{ptr::NonNull, sync::atomic};
 
 use crate::thread_data::storage::trie::{Entry, PtrTarget};
 
@@ -29,7 +29,7 @@ impl<T> Level<T> {
         });
 
         // Fill in the intermediate Result with all the missing Data
-        let own_ptr = &*result as *const Self as *mut Self;
+        let own_ptr = Box::as_mut_ptr(&mut result);
         for _ in 0..bucket_count {
             result.entries.push(CustomPtr::new_level(own_ptr));
         }
@@ -74,7 +74,8 @@ impl<T> Level<T> {
         ((key & mask) >> start) as usize
     }
 
-    fn adjust_node_on_chain(&self, node: &Entry<T>, chain: &Entry<T>, chain_pos: usize) {
+    fn adjust_node_on_chain(&self, node_ptr: NonNull<Entry<T>>, chain: &Entry<T>, chain_pos: usize) {
+        let node = unsafe { node_ptr.as_ref() };
         if let PtrTarget::Level(sub_lvl_ptr) = chain.next.load(atomic::Ordering::Acquire) {
             if chain_pos == self.max_chain() {
                 let new_level = Level::new(self.level + 1, self.key_size, self.get_own_ptr());
@@ -97,8 +98,7 @@ impl<T> Level<T> {
 
                     match bucket.load(atomic::Ordering::Acquire) {
                         PtrTarget::Entry(bucket_entry_ptr) => {
-                            let bucket_entry = unsafe { &*bucket_entry_ptr };
-                            new_level.adjust_chain_nodes(bucket_entry);
+                            new_level.adjust_chain_nodes(NonNull::new(bucket_entry_ptr).unwrap());
                         }
                         _ => unreachable!(),
                     };
@@ -108,13 +108,11 @@ impl<T> Level<T> {
                     return;
                 }
             } else {
-                let node_ptr = node as *const Entry<T> as *mut Entry<T>;
-
                 if chain
                     .next
                     .compare_exchange(
                         PtrTarget::Level(sub_lvl_ptr),
-                        PtrTarget::Entry(node_ptr),
+                        PtrTarget::Entry(node_ptr.as_ptr()),
                         atomic::Ordering::AcqRel,
                         atomic::Ordering::Relaxed,
                     )
@@ -128,7 +126,7 @@ impl<T> Level<T> {
         match chain.next.load(atomic::Ordering::Acquire) {
             PtrTarget::Entry(next_entry_ptr) => {
                 let next_entry = unsafe { &*next_entry_ptr };
-                self.adjust_node_on_chain(node, next_entry, chain_pos + 1);
+                self.adjust_node_on_chain(node_ptr, next_entry, chain_pos + 1);
             }
             PtrTarget::Level(sub_lvl_ptr) => {
                 let mut sub_lvl = unsafe { &*sub_lvl_ptr };
@@ -137,14 +135,15 @@ impl<T> Level<T> {
                     sub_lvl = unsafe { &*sub_lvl.previous() };
                 }
 
-                sub_lvl.adjust_node_on_level(node);
+                sub_lvl.adjust_node_on_level(node_ptr);
             }
         };
     }
 
     /// Basically just inserts the Entry on the current Level as part of the
     /// adjustment process to move Entries from an older Chain to a new Level
-    fn adjust_node_on_level(&self, node: &Entry<T>) {
+    fn adjust_node_on_level(&self, node_ptr: NonNull<Entry<T>>) {
+        let node = unsafe { node_ptr.as_ref() };
         node.next.store(
             PtrTarget::Level(self.get_own_ptr()),
             atomic::Ordering::Release,
@@ -157,12 +156,10 @@ impl<T> Level<T> {
             let sub_lvl = unsafe { &*sub_lvl_ptr };
 
             if sub_lvl.level() == self.level() {
-                let node_ptr = node as *const Entry<T> as *mut Entry<T>;
-
                 if bucket
                     .compare_exchange(
                         PtrTarget::Level(self.get_own_ptr()),
-                        PtrTarget::Entry(node_ptr),
+                        PtrTarget::Entry(node_ptr.as_ptr()),
                         atomic::Ordering::AcqRel,
                         atomic::Ordering::Relaxed,
                     )
@@ -176,21 +173,21 @@ impl<T> Level<T> {
         match bucket.load(atomic::Ordering::Acquire) {
             PtrTarget::Entry(entry_ptr) => {
                 let chain_entry = unsafe { &*entry_ptr };
-                self.adjust_node_on_chain(node, chain_entry, 1);
+                self.adjust_node_on_chain(node_ptr, chain_entry, 1);
             }
             PtrTarget::Level(sub_lvl_ptr) => {
                 let sub_lvl = unsafe { &*sub_lvl_ptr };
-                sub_lvl.adjust_node_on_level(node);
+                sub_lvl.adjust_node_on_level(node_ptr);
             }
         };
     }
 
-    fn adjust_chain_nodes(&self, node: &Entry<T>) {
+    fn adjust_chain_nodes(&self, node_ptr: NonNull<Entry<T>>) {
+        let node = unsafe { node_ptr.as_ref() };
         if let PtrTarget::Entry(entry_ptr) = node.next.load(atomic::Ordering::Acquire) {
-            let entry = unsafe { &*entry_ptr };
-            self.adjust_chain_nodes(entry);
+            self.adjust_chain_nodes(NonNull::new(entry_ptr).unwrap());
         }
-        self.adjust_node_on_level(node);
+        self.adjust_node_on_level(node_ptr);
     }
 
     /// This is responsible for moving all the Entries in the current Level for
@@ -202,7 +199,7 @@ impl<T> Level<T> {
 
         // Get the initial Entry in that Bucket as a starting Point
         let initial_entry = match bucket.load(atomic::Ordering::Acquire) {
-            PtrTarget::Entry(entry_ptr) => unsafe { &*entry_ptr },
+            PtrTarget::Entry(entry_ptr) => NonNull::new(entry_ptr).unwrap(),
             _ => unreachable!(),
         };
 
@@ -279,7 +276,7 @@ impl<T> Level<T> {
     }
 
     /// The Entry-Point to insert a new Entry on the Level
-    pub fn insert(&self, key: u64, data: T) -> &T {
+    pub fn insert(&self, key: u64, data: *mut T) -> &T {
         let entry = Box::new(Entry::new(
             key,
             data,

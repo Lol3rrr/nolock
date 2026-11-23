@@ -6,13 +6,13 @@ use super::{CustomPtr, Level, PtrTarget};
 #[derive(Debug)]
 pub struct Entry<T> {
     key: u64,
-    data: T,
+    data: *mut T,
     pub next: CustomPtr<T>,
 }
 
 impl<T> Entry<T> {
     /// Creates a new simply Entry
-    pub fn new(key: u64, data: T, next: CustomPtr<T>) -> Self {
+    pub fn new(key: u64, data: *mut T, next: CustomPtr<T>) -> Self {
         Self { key, data, next }
     }
 
@@ -22,7 +22,7 @@ impl<T> Entry<T> {
     }
     /// Get a reference to the Data
     pub fn data(&self) -> &T {
-        &self.data
+        unsafe { &*self.data }
     }
 
     /// Attempts to load the Data for the given Key from the current Entry or
@@ -36,7 +36,7 @@ impl<T> Entry<T> {
             // for, we found the correct Entry, so we should just return the
             // Data for that Entry
             if current.key == key {
-                return Some(&current.data);
+                return Some(current.data());
             }
 
             // Load the Pointer to the next Element in the Chain
